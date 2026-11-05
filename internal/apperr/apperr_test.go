@@ -46,7 +46,7 @@ func TestCodesAreAreaPrefixedAndUnique(t *testing.T) {
 	areas := []string{
 		"CLI", "CONFIG", "VAULT", "SERVER", "SETUP", "INVENTORY", "FEEDS", "OSV",
 		"KEV", "EPSS", "EOL", "CVE", "FINDINGS", "DAEMON", "SERVICE", "NOTIFY",
-		"FIX", "TERMINAL", "MATCH",
+		"FIX", "TERMINAL", "MATCH", "DOCTOR",
 	}
 	pattern := regexp.MustCompile(`^(` + strings.Join(areas, "|") + `)(_[A-Z0-9]+)+$`)
 

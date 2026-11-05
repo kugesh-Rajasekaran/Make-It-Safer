@@ -72,6 +72,9 @@ const (
 	ServiceInstallFailed = "SERVICE_INSTALL_FAILED"
 	ServiceUnsupported   = "SERVICE_UNSUPPORTED"
 
+	// mis doctor
+	DoctorFailed = "DOCTOR_CHECKS_FAILED"
+
 	// Fix flow, terminals and notifications
 	FixInvalidPackage = "FIX_INVALID_PACKAGE"
 	FixNothingToDo    = "FIX_NOTHING_TO_DO"
