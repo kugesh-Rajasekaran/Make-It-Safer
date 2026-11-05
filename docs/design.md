@@ -262,11 +262,14 @@ rules:
 | Stays on screen | User must pick **Alerts** style. Onboarding checks and guides you. | `urgency=critical` + `resident=true` hint (GNOME, KDE) |
 | Button click keeps it open | macOS closes it on click → daemon **re-posts it at once** with `✓` on that server | `resident` hint keeps it; we update it via `replaces_id` |
 | Button limit | Alerts show actions under an "Options" menu (exact maximum verified in spike S2) | GNOME shows max 3 → 2 servers + "All servers…" |
+| Clicks come from | The helper, over `notify.sock` (0600, same-user check) | Only the current owner of `org.freedesktop.Notifications`; signals from other programs on the bus are ignored |
 | Clicking the body | Opens the "All servers…" picker | Same (`default` action) |
 
 - **"All servers…"** opens a terminal picker (`mis pick CVE-…`) that stays open. Choose a server and its SSH window opens.
 - **As fixes land:** "2 of 3 fixed" … then ✅ "fixed on all servers" replaces the notification.
 - **Lock notice:** "Make-It-Safer is locked, click to unlock" → opens Terminal with `mis unlock`.
+- **Buttons:** `notifications.max_buttons` (default 3) counts the server buttons plus "All servers…".
+- **Without the background service:** `mis fix <server> [CVE]` and `mis pick <CVE>` open the same SSH sessions from the command line.
 
 ### 4.7 Fix flow: click → terminal → SSH → prefilled command
 
@@ -276,7 +279,7 @@ rules:
    - **default** = macOS `open -a Terminal x.command`, or Linux `$TERMINAL` → `x-terminal-emulator` → `gnome-terminal`/`kgx`/`konsole`/`xfce4-terminal` → `xterm`
    - Also: `iterm2`, `ghostty`, `kitty`, `alacritty`, `wezterm`, or a custom `"cmd {script}"`
 4. **SSH as you:** `ssh -t <admin_ssh>` (e.g. `ubuntu@51.x.x.x` or your `~/.ssh/config` alias). Your own keys and password prompts apply, and `mis` stores only this login name.
-5. **On the server, before the prompt**, a short bash snippet shows the banner and runs `read -e -i "<command>"`, so the command is already typed in:
+5. **On the server, before the prompt**, a short bash snippet shows the banner and runs `read -e -i "<command>"`, so the command is already typed in. Nothing runs without Enter:
 ```
 ⚠ Make-It-Safer · ovh-web-1
   CVE-2026-XXXXX  openssh  actively exploited  CVSS 9.8
@@ -285,6 +288,9 @@ rules:
 
 ubuntu@ovh-web-1:~$ sudo apt-get update && sudo apt-get install --only-upgrade openssh-server openssh-client▌
 ```
+   - **Enter** runs it. apt still asks `[Y/n]`, so you see what changes first.
+   - **Ctrl-C** at the prompt, or while the command runs, leaves you in a normal shell. The line is read, and the command run, in subshells with normal Ctrl-C, because bash's `read -e` ignores a trapped Ctrl-C.
+   - The snippet travels base64-encoded (`bash -c "$(printf %s … | base64 -d)"`), so no quoting breaks on the way.
 6. **After you run it**, the daemon refreshes that server's package list every 10 min, for up to 1 h → ✅ resolved.
 
 **Fix command builder:**
@@ -293,10 +299,11 @@ ubuntu@ovh-web-1:~$ sudo apt-get update && sudo apt-get install --only-upgrade o
 |---|---|
 | Debian/Ubuntu package | `sudo apt-get update && sudo apt-get install --only-upgrade <installed binaries of the source package>` |
 | Kernel | Upgrade the installed kernel meta-packages (e.g. `linux-image-generic` on Ubuntu, `linux-image-amd64` on Debian). The banner adds: "then run `sudo reboot`" (never auto-run). |
-| Fix only via Ubuntu Pro | The banner explains this (`sudo pro attach`). No apt command. |
+| Restart needed (a newer kernel is installed) | `sudo reboot`, typed in like any other fix |
+| Fix only via Ubuntu Pro | The same apt command; the banner adds that it needs Ubuntu Pro (`sudo pro attach`). Once attached, apt installs the fix. |
 | Admin login is `root` | Same commands without `sudo` |
 
-Package names must match `^[a-z0-9][a-z0-9+.\-]*(:[a-z0-9]+)?$` and are shell-quoted. **No feed text ever enters the command.**
+Package names must match `^[a-z0-9][a-z0-9+.-]{0,127}(:[a-z0-9-]{1,32})?$` and are shell-quoted. **No feed text ever enters the command.** Banner text is printed as data, with control characters removed.
 
 ### 4.8 CLI
 

@@ -94,7 +94,7 @@ For every server you own, always know which vulnerabilities affect it, and be on
 | M2 | Read-only server access | M | set up a server and prove it's read-only | ✅ Done |
 | M3 | Vulnerability checks | L | run `mis check` and see what's vulnerable where | ✅ Done |
 | M4 | Background service | M | reboot, unlock once, and checks run by themselves | ✅ Done |
-| M5 | Notifications and fix flow (Mac first) | L | click a server button and get SSH with the fix typed in | ⬜ |
+| M5 | Notifications and fix flow (Mac first) | L | click a server button and get SSH with the fix typed in | ✅ Built · S2/S3 on your Mac and Linux desktop |
 | M6 | Early warning | S | get heads-ups for critical CVEs within ~15 min | ⬜ |
 | M7 | Setup wizard and polish | M | set everything up with `mis init` alone | ⬜ |
 
@@ -177,6 +177,8 @@ Goal: design §4.6 and §4.7. Starts with spike S2 on your Mac.
 | S3 | `spike` (your Linux desktop) from the systemd user service: open a terminal and show a resident notification | Results written into design §4.6 and §7 |
 | T-505 | `feat(notify)` Linux D-Bus notifier: actions, `resident`, `replaces_id`, 3-button limit, re-post fallback | Tests against a fake notification server |
 | T-506 | `test(e2e)` fix → re-check → ✅ resolved | Green in Docker |
+
+Built and tested here: T-501, T-502, T-504, T-505, T-506 (Docker: prefill, Enter, edit, Ctrl-C, upgrade from a local apt repository, ✅ resolved). CI compiles T-503. Still yours: S2 and S3, the checks below.
 
 **You check:**
 1. On your Mac, run `mis notify test`.
