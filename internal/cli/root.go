@@ -82,7 +82,8 @@ fix command already typed in.`,
 
 	root.AddCommand(a.versionCmd(), a.initCmd(), a.passphraseCmd(), a.serverCmd(),
 		a.checkCmd(), a.findingsCmd(), a.showCmd(), a.ackCmd(),
-		a.daemonCmd(), a.unlockCmd(), a.lockCmd(), a.statusCmd(), a.serviceCmd())
+		a.daemonCmd(), a.unlockCmd(), a.lockCmd(), a.statusCmd(), a.serviceCmd(),
+		a.fixCmd(), a.pickCmd(), a.notifyCmd())
 	return root
 }
 
