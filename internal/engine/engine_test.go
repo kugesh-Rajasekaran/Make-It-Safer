@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -27,6 +28,18 @@ import (
 type fakeData struct {
 	fixed string // openssh fixed version on Ubuntu 24.04
 	kev   bool   // whether CVE-2024-6387 is in CISA KEV
+
+	mu      sync.Mutex
+	log     string            // CVE List delta log
+	records map[string]string // CVE → CVE record
+	distro  map[string]string // more Ubuntu records (UBUNTU-CVE-…) → openssh fixed version ("" = not affected)
+	fetched map[string]int    // CVE record downloads
+}
+
+func (d *fakeData) set(f func()) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	f()
 }
 
 func (d *fakeData) handler(t *testing.T) http.Handler {
@@ -34,6 +47,10 @@ func (d *fakeData) handler(t *testing.T) http.Handler {
 	if err != nil {
 		t.Fatal(err)
 	}
+	d.set(func() {
+		d.records = map[string]string{"CVE-2024-6387": string(cveRecord)}
+		d.distro, d.fetched = map[string]string{}, map[string]int{}
+	})
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/querybatch", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
@@ -43,20 +60,48 @@ func (d *fakeData) handler(t *testing.T) http.Handler {
 			}
 		}
 		_ = json.NewDecoder(r.Body).Decode(&req)
+		d.mu.Lock()
+		defer d.mu.Unlock()
 		results := make([]map[string]any, len(req.Queries))
 		for i, q := range req.Queries {
 			results[i] = map[string]any{}
-			if q.Package.Name == "openssh" && q.Package.Ecosystem == "Ubuntu:24.04:LTS" && osv.CompareVersions(q.Version, d.fixed) < 0 {
-				results[i]["vulns"] = []map[string]string{{"id": "UBUNTU-CVE-2024-6387", "modified": "2026-11-01T00:00:00Z"}}
+			if q.Package.Name != "openssh" || q.Package.Ecosystem != "Ubuntu:24.04:LTS" {
+				continue
+			}
+			var vulns []map[string]string
+			if osv.CompareVersions(q.Version, d.fixed) < 0 {
+				vulns = append(vulns, map[string]string{"id": "UBUNTU-CVE-2024-6387", "modified": "2026-11-01T00:00:00Z"})
+			}
+			for id, fixed := range d.distro {
+				if fixed != "" && osv.CompareVersions(q.Version, fixed) < 0 {
+					vulns = append(vulns, map[string]string{"id": id, "modified": "2026-11-01T00:00:00Z"})
+				}
+			}
+			if vulns != nil {
+				results[i]["vulns"] = vulns
 			}
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"results": results})
 	})
-	mux.HandleFunc("GET /v1/vulns/UBUNTU-CVE-2024-6387", func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = io.WriteString(w, `{"id":"UBUNTU-CVE-2024-6387","modified":"2026-11-01T00:00:00Z","upstream":["CVE-2024-6387"],
+	mux.HandleFunc("GET /v1/vulns/{id}", func(w http.ResponseWriter, r *http.Request) {
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		id, fixed := r.PathValue("id"), d.fixed
+		if id != "UBUNTU-CVE-2024-6387" {
+			var ok bool
+			if fixed, ok = d.distro[id]; !ok {
+				http.NotFound(w, r)
+				return
+			}
+		}
+		events := `{"introduced":"0"}`
+		if fixed != "" {
+			events += `,{"fixed":"` + fixed + `"}`
+		}
+		_, _ = io.WriteString(w, `{"id":"`+id+`","modified":"2026-11-01T00:00:00Z","upstream":["`+strings.TrimPrefix(id, "UBUNTU-")+`"],
 			"summary":"regreSSHion","severity":[{"type":"Ubuntu","score":"high"}],
 			"affected":[{"package":{"name":"openssh","ecosystem":"Ubuntu:24.04:LTS"},
-			"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"0"},{"fixed":"`+d.fixed+`"}]}],
+			"ranges":[{"type":"ECOSYSTEM","events":[`+events+`]}],
 			"ecosystem_specific":{"availability":"No subscription required"}}]}`)
 	})
 	mux.HandleFunc("GET /kev.json", func(w http.ResponseWriter, _ *http.Request) {
@@ -72,8 +117,23 @@ func (d *fakeData) handler(t *testing.T) http.Handler {
 	mux.HandleFunc("GET /ubuntu.json", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, `[{"cycle":"24.04","eol":"2029-05-31","extendedSupport":"2036-04-25"},{"cycle":"20.04","eol":"2025-05-29","extendedSupport":"2030-04-02"}]`)
 	})
-	mux.HandleFunc("GET /cves/2024/6xxx/CVE-2024-6387.json", func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write(cveRecord)
+	mux.HandleFunc("GET /cves/deltaLog.json", func(w http.ResponseWriter, r *http.Request) {
+		d.mu.Lock()
+		log := d.log
+		d.mu.Unlock()
+		http.ServeContent(w, r, "deltaLog.json", time.Time{}, strings.NewReader(log))
+	})
+	mux.HandleFunc("GET /cves/{year}/{dir}/{file}", func(w http.ResponseWriter, r *http.Request) {
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		id := strings.TrimSuffix(r.PathValue("file"), ".json")
+		record, ok := d.records[id]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		d.fetched[id]++
+		_, _ = io.WriteString(w, record)
 	})
 	return mux
 }

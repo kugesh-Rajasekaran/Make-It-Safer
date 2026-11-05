@@ -210,6 +210,7 @@ func (e *Engine) Match(ctx context.Context, servers []config.Server) (*Result, e
 		}
 		f.Priority = findings.Classify(f, e.Rules, now)
 	}
+	settled := e.settleEarlyWarnings(ctx, previous, work, current, now)
 
 	// 4. Record them.
 	err = findings.Update(e.Paths, func(st *findings.Store) error {
@@ -229,6 +230,12 @@ func (e *Engine) Match(ctx context.Context, servers []config.Server) (*Result, e
 			res.Changes.Reopened = append(res.Changes.Reopened, ch.Reopened...)
 			res.Changes.Escalated = append(res.Changes.Escalated, ch.Escalated...)
 			res.Changes.Resolved = append(res.Changes.Resolved, ch.Resolved...)
+		}
+		for id, resolution := range settled {
+			if f := st.Find(id); f != nil && f.Open() && f.Transition(findings.StateResolved, now) == nil {
+				f.Resolution = resolution
+				res.Changes.Resolved = append(res.Changes.Resolved, f)
+			}
 		}
 		st.Prune(now)
 		for _, w := range work {
