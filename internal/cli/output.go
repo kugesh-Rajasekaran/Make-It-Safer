@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -26,9 +27,34 @@ func (a *app) emit(data any, human func(w io.Writer)) error {
 	return nil
 }
 
+// emitFailed prints the results of a command that failed, like mis doctor
+// with failed checks. With --json it's one envelope with both:
+// {"ok": false, "error": …, "data": …}.
+func (a *app) emitFailed(data any, human func(w io.Writer), err error) error {
+	if !a.json {
+		human(a.stdout)
+		return err
+	}
+	e := asAppError(err)
+	_ = a.writeJSON(struct {
+		OK    bool      `json:"ok"`
+		Error errorBody `json:"error"`
+		Data  any       `json:"data"`
+	}{false, errorBody{Code: e.Code, Message: e.Error()}, data})
+	return printedError{err}
+}
+
+// printedError is an error already printed as JSON.
+type printedError struct{ error }
+
+func (p printedError) Unwrap() error { return p.error }
+
 // printError prints a failed command: the {"ok": false, "error": …}
 // envelope on stdout with --json, otherwise one line on stderr.
 func (a *app) printError(err error) {
+	if errors.As(err, new(printedError)) {
+		return
+	}
 	e := asAppError(err)
 	if a.json {
 		_ = a.writeJSON(struct {

@@ -3,9 +3,12 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/kugesh-rajasekaran/make-it-safer/internal/apperr"
 )
 
 type envelope struct {
@@ -94,5 +97,16 @@ func TestCommandsNeedInit(t *testing.T) {
 	e := decode(t, out)
 	if code != 1 || e.Error == nil || e.Error.Code != "CONFIG_NOT_INITIALIZED" {
 		t.Fatalf("exit %d, envelope %s", code, out)
+	}
+}
+
+func TestFailedResultsAreOneEnvelope(t *testing.T) {
+	var out bytes.Buffer
+	a := newApp([]string{"--json"}, nil, &out, &out)
+	err := a.emitFailed([]string{"check"}, func(io.Writer) {}, apperr.New(apperr.SetupVerifyFailed, "some checks failed"))
+	a.printError(err)
+	e := decode(t, out.String()) // fails on two JSON documents
+	if e.OK || e.Error == nil || e.Error.Code != apperr.SetupVerifyFailed || string(e.Data) != `["check"]` {
+		t.Fatalf("envelope = %s", out.String())
 	}
 }

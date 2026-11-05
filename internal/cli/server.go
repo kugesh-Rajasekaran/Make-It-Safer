@@ -221,14 +221,11 @@ func (a *app) verifyServers(ctx context.Context, paths config.Paths, servers []c
 }
 
 func (a *app) printReports(reports []*setup.Report) error {
-	failed := slices.ContainsFunc(reports, func(r *setup.Report) bool { return !r.OK })
-	if err := a.emit(reports, func(w io.Writer) { writeReports(w, reports) }); err != nil {
-		return err
+	human := func(w io.Writer) { writeReports(w, reports) }
+	if slices.ContainsFunc(reports, func(r *setup.Report) bool { return !r.OK }) {
+		return a.emitFailed(reports, human, apperr.New(apperr.SetupVerifyFailed, "some checks failed (marked ✗ above)"))
 	}
-	if failed {
-		return apperr.New(apperr.SetupVerifyFailed, "some checks failed (marked ✗ above)")
-	}
-	return nil
+	return a.emit(reports, human)
 }
 
 func writeReports(w io.Writer, reports []*setup.Report) {
