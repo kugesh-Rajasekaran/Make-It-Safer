@@ -29,8 +29,12 @@ type Daemon struct {
 	newEngine func(*config.Config) *engine.Engine
 	feeds     *feeds.Client
 
+	ctx           context.Context
+	followUpEvery time.Duration
+
 	mu      sync.Mutex
-	key     *vault.Key // nil while locked
+	key     *vault.Key                 // nil while locked
+	clicked map[string]map[string]bool // notification group → servers whose fix button was used
 	limiter vault.Limiter
 	sched   *scheduler
 	started time.Time
@@ -38,7 +42,8 @@ type Daemon struct {
 
 // New returns a daemon for the given install.
 func New(paths config.Paths, version string, log *slog.Logger, notifier notify.Notifier) *Daemon {
-	d := &Daemon{paths: paths, version: version, log: log, notifier: notifier, now: time.Now, feeds: feeds.New(version)}
+	d := &Daemon{paths: paths, version: version, log: log, notifier: notifier, now: time.Now, feeds: feeds.New(version),
+		ctx: context.Background(), followUpEvery: followUpEvery, clicked: map[string]map[string]bool{}}
 	d.newEngine = func(cfg *config.Config) *engine.Engine { return engine.New(paths, cfg, version, log) }
 	return d
 }
@@ -57,7 +62,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	defer func() { _ = os.Remove(d.paths.Socket) }()
 	defer d.lock()
 
-	d.started = d.now()
+	d.ctx, d.started = ctx, d.now()
 	d.sched = newScheduler(d.jobs(), filepath.Join(d.paths.State, "schedule.json"), d.now, d.unlocked, d.log)
 	go d.serve(ctx, l)
 	go d.handleClicks(ctx)
@@ -90,7 +95,11 @@ func (d *Daemon) dispatch(ctx context.Context, req Request) (any, error) {
 	case OpCheck:
 		return d.check(ctx, req)
 	case OpFix:
-		return nil, d.fix(req.Server, req.CVE)
+		key := ""
+		if req.CVE != "" {
+			key = "cve:" + req.CVE
+		}
+		return nil, d.fix(req.Server, key)
 	case OpNotify:
 		return nil, d.notifyTest()
 	}

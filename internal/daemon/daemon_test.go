@@ -17,6 +17,7 @@ import (
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/engine"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/feeds"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/findings"
+	"github.com/kugesh-rajasekaran/make-it-safer/internal/inventory"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/notify"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/secret"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/vault"
@@ -229,4 +230,49 @@ func contains(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+func TestFixButton(t *testing.T) {
+	paths := newInstall(t)
+	cfg, _ := config.Load(paths.Config)
+	cfg.Servers = []config.Server{{Name: "web", Host: "10.0.0.1", Port: 22, AdminSSH: "ubuntu@10.0.0.1"}, {Name: "db", Host: "10.0.0.2", Port: 22, AdminSSH: "ubuntu@10.0.0.2"}}
+	cfg.Terminal = config.Terminal{App: "custom", Command: "true {script}"} // the "terminal" just exits
+	if err := cfg.Save(paths.Config); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []string{"web", "db"} {
+		inv := &inventory.Inventory{OSID: "ubuntu", OSVersion: "24.04", Kernel: "6.8", Packages: []inventory.Package{{Name: "openssh-server", Version: "1", Source: "openssh", SourceVersion: "1"}}}
+		if err := inventory.Save(paths, s, inv); err != nil {
+			t.Fatal(err)
+		}
+	}
+	now := time.Now()
+	_ = findings.Update(paths, func(st *findings.Store) error {
+		for _, s := range []string{"web", "db"} {
+			st.Merge(s, []*findings.Finding{{ID: findings.MakeID(s, findings.KindVulnerability, "CVE-2024-6387/openssh"), Server: s,
+				Kind: findings.KindVulnerability, CVE: "CVE-2024-6387", Source: "openssh", Installed: "1", Fixed: "2", Priority: findings.High}},
+				[]findings.Kind{findings.KindVulnerability}, now)
+		}
+		return nil
+	})
+
+	rec := newRecorder()
+	d := New(paths, "test", slog.New(slog.NewTextHandler(io.Discard, nil)), rec)
+	d.followUpEvery = time.Hour // don't follow up during the test
+	d.onClick(notify.Event{NotificationID: "cve:CVE-2024-6387", Action: "fix:web"})
+	d.onClick(notify.Event{NotificationID: "cve:CVE-2024-6387", Action: "all"})
+
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+	if len(rec.shown) != 1 {
+		t.Fatalf("want the notification shown again once, got %+v", rec.shown)
+	}
+	n := rec.shown[0]
+	var labels []string
+	for _, b := range n.Buttons {
+		labels = append(labels, b.Title)
+	}
+	if n.ID != "cve:CVE-2024-6387" || strings.Join(labels, "|") != "db|web ✓|All servers…" || n.Sound {
+		t.Fatalf("re-shown notification = %+v", n)
+	}
 }

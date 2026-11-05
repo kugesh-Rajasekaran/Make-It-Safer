@@ -37,8 +37,13 @@ func (d *Daemon) showLockNotice() {
 // of a notification per vulnerability; fixed vulnerabilities replace their
 // notification with ✅. Everything else goes through the reminders.
 func (d *Daemon) alert(res *engine.Result) {
+	cfg, err := config.Load(d.paths.Config)
+	if err != nil {
+		d.log.Warn("alert", "status", "error", "error", err)
+		return
+	}
 	now := d.now()
-	err := findings.Update(d.paths, func(st *findings.Store) error {
+	err = findings.Update(d.paths, func(st *findings.Store) error {
 		for _, s := range res.Servers {
 			if !s.First || s.Code != "" {
 				continue
@@ -50,18 +55,26 @@ func (d *Daemon) alert(res *engine.Result) {
 			}
 			_ = d.notifier.Show(notify.Notification{
 				ID: "baseline:" + s.Server, Title: s.Server + " is now monitored",
-				Body: "Open now: " + summaryCounts(s.Open) + ". See them with: mis findings --server " + s.Server,
+				Body: "Open now: " + summaryCounts(s.Open) + ". Click to see them.",
 			})
 		}
 		for _, key := range groupKeys(res.Changes.Resolved) {
-			if slices.ContainsFunc(st.Findings, func(f *findings.Finding) bool { return f.Open() && groupKey(f) == key }) {
+			shown := slices.ContainsFunc(res.Changes.Resolved, func(f *findings.Finding) bool { return groupKey(f) == key && !f.NotifiedAt.IsZero() })
+			if !shown {
+				continue // never shown, so nothing to update
+			}
+			open := slices.DeleteFunc(slices.Clone(st.Findings), func(f *findings.Finding) bool { return !f.Open() || groupKey(f) != key })
+			if len(open) > 0 { // some servers fixed: show the progress
+				n := d.groupNotification(key, open, fixedServers(st, key, now), cfg)
+				n.Sound = false
+				_ = d.notifier.Show(n)
 				continue
 			}
 			first := res.Changes.Resolved[slices.IndexFunc(res.Changes.Resolved, func(f *findings.Finding) bool { return groupKey(f) == key })]
-			if first.NotifiedAt.IsZero() {
-				continue // never shown, so nothing to update
-			}
 			_ = d.notifier.Show(notify.Notification{ID: key, Title: "✅ " + title(first), Body: "Fixed on all servers."})
+			d.mu.Lock()
+			delete(d.clicked, key)
+			d.mu.Unlock()
 		}
 		return nil
 	})
@@ -91,7 +104,7 @@ func (d *Daemon) remind() error {
 		}
 		for key := range due {
 			group := slices.DeleteFunc(slices.Clone(st.Findings), func(f *findings.Finding) bool { return !f.Open() || groupKey(f) != key })
-			if err := d.notifier.Show(d.groupNotification(key, group, cfg)); err != nil {
+			if err := d.notifier.Show(d.groupNotification(key, group, fixedServers(st, key, now), cfg)); err != nil {
 				return err
 			}
 			for _, f := range due[key] {
@@ -120,8 +133,10 @@ func (d *Daemon) remind() error {
 	})
 }
 
-// groupNotification builds the notification for one group of findings.
-func (d *Daemon) groupNotification(key string, group []*findings.Finding, cfg *config.Config) notify.Notification {
+// groupNotification builds the notification for one group of open findings:
+// a button per affected server (✓ once used) and "All servers…" when there
+// are more servers than buttons. fixed counts servers already fixed.
+func (d *Daemon) groupNotification(key string, group []*findings.Finding, fixed int, cfg *config.Config) notify.Notification {
 	top, servers := findings.Silent, []string{}
 	kev, fix, proOnly := false, false, false
 	for _, f := range group {
@@ -131,6 +146,7 @@ func (d *Daemon) groupNotification(key string, group []*findings.Finding, cfg *c
 			servers = append(servers, f.Server)
 		}
 	}
+	slices.Sort(servers)
 	n := notify.Notification{ID: key, Urgent: top == findings.Urgent, Sound: cfg.Notifications.Sound}
 	if len(group) == 0 {
 		return n
@@ -139,15 +155,43 @@ func (d *Daemon) groupNotification(key string, group []*findings.Finding, cfg *c
 	if kev {
 		n.Title += " · actively exploited"
 	}
-	switch {
-	case group[0].Kind != findings.KindVulnerability:
+	if group[0].Kind != findings.KindVulnerability {
 		n.Body = group[0].Summary
+		if group[0].Kind == findings.KindReboot {
+			n.Buttons = []notify.Button{{ID: "fix:" + group[0].Server, Title: "Open SSH to restart"}}
+		}
+		return n
+	}
+
+	affected := plural(len(servers), "server") + " affected"
+	if fixed > 0 {
+		affected = fmt.Sprintf("%d of %d servers fixed", fixed, fixed+len(servers))
+	}
+	switch {
 	case proOnly:
-		n.Body = fmt.Sprintf("%s affected · fix needs Ubuntu Pro", plural(len(servers), "server"))
+		n.Body = affected + " · fix needs Ubuntu Pro"
 	case fix:
-		n.Body = fmt.Sprintf("%s affected · fix available", plural(len(servers), "server"))
+		n.Body = affected + " · fix available"
 	default:
-		n.Body = fmt.Sprintf("%s affected · no fix yet", plural(len(servers), "server"))
+		n.Body = affected + " · no fix yet"
+	}
+
+	d.mu.Lock()
+	clicked := d.clicked[key]
+	d.mu.Unlock()
+	shown := min(len(servers), max(1, cfg.Notifications.MaxButtons-1))
+	if len(servers) == 1 {
+		shown = 1
+	}
+	for _, s := range servers[:shown] {
+		label := s
+		if clicked[s] {
+			label += " ✓"
+		}
+		n.Buttons = append(n.Buttons, notify.Button{ID: "fix:" + s, Title: label})
+	}
+	if len(servers) > 1 {
+		n.Buttons = append(n.Buttons, notify.Button{ID: "all", Title: "All servers…"})
 	}
 	return n
 }
