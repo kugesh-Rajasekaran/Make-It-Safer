@@ -53,4 +53,17 @@ const (
 	InventoryInvalid  = "INVENTORY_INVALID"
 	InventoryTooLarge = "INVENTORY_TOO_LARGE"
 	InventoryNotFound = "INVENTORY_NOT_FOUND"
+
+	// Vulnerability data sources
+	FeedsHostNotAllowed = "FEEDS_HOST_NOT_ALLOWED"
+	FeedsUnavailable    = "FEEDS_UNAVAILABLE"
+	FeedsRequestFailed  = "FEEDS_REQUEST_FAILED"
+	FeedsInvalidData    = "FEEDS_INVALID_DATA"
+	OSVQueryFailed      = "OSV_QUERY_FAILED"
+	CVEInvalidID        = "CVE_INVALID_ID"
+
+	// Findings
+	FindingsNotFound          = "FINDINGS_NOT_FOUND"
+	FindingsInvalidTransition = "FINDINGS_INVALID_TRANSITION"
+	FindingsStateDamaged      = "FINDINGS_STATE_DAMAGED"
 )
