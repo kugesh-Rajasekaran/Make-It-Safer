@@ -7,7 +7,7 @@ MODULE    := github.com/kugesh-rajasekaran/make-it-safer
 VERSION   ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS   := -s -w -X $(MODULE)/internal/cli.version=$(VERSION)
 
-.PHONY: build test test-integration lint fmt fmt-check check clean
+.PHONY: build test test-integration lint fmt fmt-check check clean macos-helper
 
 build:
 	$(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $(BIN) ./cmd/mis
@@ -30,5 +30,9 @@ fmt-check:
 
 check: fmt-check lint test
 
+# macOS only: builds "Make-It-Safer Notifier.app" into macos/build/.
+macos-helper:
+	./macos/build.sh
+
 clean:
-	rm -rf bin
+	rm -rf bin macos/build

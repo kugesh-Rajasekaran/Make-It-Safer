@@ -46,3 +46,5 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go build ./... && go vet ./... && go test ./...
+      - name: Build the notification helper app
+        run: make macos-helper
