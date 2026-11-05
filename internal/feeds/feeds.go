@@ -75,6 +75,15 @@ func (c *Client) Get(ctx context.Context, rawURL, etag string) (*Response, error
 	return c.do(ctx, http.MethodGet, rawURL, nil, etag)
 }
 
+// Head returns the ETag of rawURL without downloading it.
+func (c *Client) Head(ctx context.Context, rawURL string) (string, error) {
+	r, err := c.do(ctx, http.MethodHead, rawURL, nil, "")
+	if err != nil {
+		return "", err
+	}
+	return r.ETag, nil
+}
+
 // GetJSON fetches rawURL and decodes the JSON answer into v.
 func (c *Client) GetJSON(ctx context.Context, rawURL string, v any) error {
 	r, err := c.do(ctx, http.MethodGet, rawURL, nil, "")

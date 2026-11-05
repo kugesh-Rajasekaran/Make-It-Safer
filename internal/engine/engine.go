@@ -51,7 +51,8 @@ func New(paths config.Paths, cfg *config.Config, version string, log *slog.Logge
 type ServerResult struct {
 	Server string         `json:"server"`
 	OS     string         `json:"os,omitempty"`
-	Code   string         `json:"code,omitempty"` // set when the server couldn't be checked
+	First  bool           `json:"first_check,omitempty"` // first check since the server was added
+	Code   string         `json:"code,omitempty"`        // set when the server couldn't be checked
 	Error  string         `json:"error,omitempty"`
 	Open   map[string]int `json:"open"` // open findings per priority
 }
@@ -216,6 +217,8 @@ func (e *Engine) Match(ctx context.Context, servers []config.Server) (*Result, e
 			if !ok {
 				continue
 			}
+			_, seen := st.Checked[w.server.Name]
+			w.result.First = !seen
 			kinds := []findings.Kind{findings.KindVulnerability, findings.KindReboot}
 			if cycles[w.inv.OSID] != nil {
 				kinds = append(kinds, findings.KindEndOfLife)

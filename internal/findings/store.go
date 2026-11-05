@@ -19,6 +19,8 @@ type Store struct {
 	Findings []*Finding `json:"findings"`
 	// Checked records when each server was last matched against the data.
 	Checked map[string]time.Time `json:"checked"`
+	// Notes records when occasional notifications were last shown.
+	Notes map[string]time.Time `json:"notes"`
 }
 
 // Changes says what a merge changed, for notifications.
@@ -33,7 +35,7 @@ type Changes struct {
 func Load(paths config.Paths) (*Store, error) {
 	data, err := os.ReadFile(file(paths))
 	if errors.Is(err, fs.ErrNotExist) {
-		return &Store{Version: 1, Checked: map[string]time.Time{}}, nil
+		return &Store{Version: 1, Checked: map[string]time.Time{}, Notes: map[string]time.Time{}}, nil
 	}
 	if err != nil {
 		return nil, apperr.Wrap(apperr.ConfigUnreadable, err, "cannot read findings")
@@ -44,6 +46,9 @@ func Load(paths config.Paths) (*Store, error) {
 	}
 	if s.Checked == nil {
 		s.Checked = map[string]time.Time{}
+	}
+	if s.Notes == nil {
+		s.Notes = map[string]time.Time{}
 	}
 	return s, nil
 }

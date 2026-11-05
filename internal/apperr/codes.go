@@ -62,6 +62,15 @@ const (
 	OSVQueryFailed      = "OSV_QUERY_FAILED"
 	CVEInvalidID        = "CVE_INVALID_ID"
 
+	// Background service
+	DaemonNotRunning     = "DAEMON_NOT_RUNNING"
+	DaemonAlreadyRunning = "DAEMON_ALREADY_RUNNING"
+	DaemonPeerRejected   = "DAEMON_PEER_REJECTED"
+	DaemonBadRequest     = "DAEMON_BAD_REQUEST"
+	DaemonFailed         = "DAEMON_FAILED"
+	ServiceInstallFailed = "SERVICE_INSTALL_FAILED"
+	ServiceUnsupported   = "SERVICE_UNSUPPORTED"
+
 	// Findings
 	FindingsNotFound          = "FINDINGS_NOT_FOUND"
 	FindingsInvalidTransition = "FINDINGS_INVALID_TRANSITION"
