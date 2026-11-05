@@ -1,7 +1,10 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"io"
 	"log/slog"
@@ -89,7 +92,13 @@ func newInstall(t *testing.T) config.Paths {
 
 func startDaemon(t *testing.T, paths config.Paths, n notify.Notifier) *Daemon {
 	t.Helper()
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	return startDaemonLogging(t, paths, n, io.Discard)
+}
+
+// startDaemonLogging starts a daemon that logs everything (debug level) to w.
+func startDaemonLogging(t *testing.T, paths config.Paths, n notify.Notifier, w io.Writer) *Daemon {
+	t.Helper()
+	log := slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	d := New(paths, "test", log, n)
 	d.feeds = feeds.NewForTest("http://127.0.0.1:1") // no network in tests
 	d.newEngine = func(cfg *config.Config) *engine.Engine {
@@ -378,5 +387,57 @@ func TestHostKeyMismatchAlerts(t *testing.T) {
 	defer rec.mu.Unlock()
 	if len(rec.shown) != 1 {
 		t.Fatalf("the click failed: %+v", rec.shown[1:])
+	}
+}
+
+// syncBuffer is a bytes.Buffer safe for the daemon's goroutines.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// TestLogsHoldNoSecrets runs the daemon through unlock, check, lock and a
+// wrong passphrase, logging everything, and scans the log for secrets.
+func TestLogsHoldNoSecrets(t *testing.T) {
+	paths := newInstall(t)
+	logs := &syncBuffer{}
+	startDaemonLogging(t, paths, newRecorder(), logs)
+	call := func(req Request) error { return Call(paths, req, nil, 30*time.Second) }
+
+	if err := call(Request{Op: OpUnlock, Passphrase: []byte(passphrase)}); err != nil {
+		t.Fatal(err)
+	}
+	for _, op := range []string{OpStatus, OpCheck, OpLock} {
+		if err := call(Request{Op: op}); err != nil {
+			t.Fatalf("%s: %v", op, err)
+		}
+	}
+	const wrong = "not my passphrase at all 42"
+	if err := call(Request{Op: OpUnlock, Passphrase: []byte(wrong)}); err == nil {
+		t.Fatal("a wrong passphrase unlocked")
+	}
+
+	out := logs.String()
+	if !strings.Contains(out, "unlock") {
+		t.Fatalf("the log doesn't show the unlock; is logging on?\n%s", out)
+	}
+	for _, s := range []string{passphrase, wrong} {
+		for _, form := range []string{s, base64.StdEncoding.EncodeToString([]byte(s)), hex.EncodeToString([]byte(s)), "glacier", "not my"} {
+			if strings.Contains(out, form) {
+				t.Errorf("the log contains %q:\n%s", form, out)
+			}
+		}
 	}
 }
