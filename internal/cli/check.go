@@ -13,6 +13,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/apperr"
+	"github.com/kugesh-rajasekaran/make-it-safer/internal/daemon"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/engine"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/findings"
 )
@@ -35,6 +36,17 @@ vulnerability data. With --no-refresh it only matches the saved lists.`,
 			servers, err := pick(cfg, names)
 			if err != nil {
 				return err
+			}
+			// The background service checks with its unlocked key, without asking again.
+			if daemon.Running(paths) {
+				var res engine.Result
+				err := daemon.Call(paths, daemon.Request{Op: daemon.OpCheck, Servers: names, Refresh: !noRefresh}, &res, 30*time.Minute)
+				if err == nil {
+					return a.emit(&res, func(w io.Writer) { printCheck(w, &res) })
+				}
+				if !apperr.Is(err, apperr.VaultLocked) {
+					return err
+				}
 			}
 			var signer ssh.Signer
 			if !noRefresh {
