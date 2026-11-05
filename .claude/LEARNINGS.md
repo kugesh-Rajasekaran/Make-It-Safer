@@ -31,3 +31,18 @@ Append-only log of non-obvious discoveries. Newest last.
 
 - **What:** `apt-get install --only-upgrade` asks "Do you want to continue? [Y/n]". We keep that confirmation (no `-y`): you see what changes before it happens.
 - **Files:** `internal/fixcmd/fixcmd.go`, `internal/engine/integration_test.go`
+
+## 2026-11-05 · The CVE List delta log is big, newest first, and range-readable
+
+- **What:** `cves/deltaLog.json` is ~37 MB (2.2 MB gzipped) for 30 days, newest change set first, a set every ~11 min (p10 6 min, p90 30 min), ~600 new CVEs a day. `delta.json` only holds the latest set, so polling it misses sets. raw.githubusercontent.com answers `Range` requests with 206 (and `cache-control: max-age=300`). Go's transport doesn't ask for gzip when a `Range` header is set, so ranges are plain bytes.
+- **Files:** `internal/feeds/feeds.go` (`GetStart`), `internal/feeds/cvelist/delta.go`
+
+## 2026-11-05 · CISA writes KEV status into CVE records
+
+- **What:** CISA's ADP container adds `{"other": {"type": "kev", "content": {"dateAdded": …}}}` to the record's metrics, so a KEV listing shows up as a CVE List update; no separate KEV polling of watched CVEs is needed.
+- **Files:** `internal/feeds/cvelist/cvelist.go` (`kevListed`)
+
+## 2026-11-05 · Exact product names need a vendor check
+
+- **What:** On real data, exact name matching alone matched "Git for Windows" (vendor `git-for-windows`, product `git`) and Tanium's "Patch" module to Debian's `git` and `patch`. Bare names now only count with a known vendor, no vendor, or a vendor that names the product; other operating systems are skipped.
+- **Files:** `internal/match/match.go`, `internal/match/testdata/`

@@ -180,7 +180,7 @@ The key is then pinned. A mismatch later blocks the connection and triggers an u
 | Exploited list | CISA KEV JSON (GitHub mirror as fallback, saved copy when offline) | With the feed check | No |
 | Exploit probability | EPSS API, only for findings that can alert | With each match | No |
 | OS end-of-life | endoflife.date | With each match | No |
-| Early warning | CVE List `deltaLog.json` | 15 min | No |
+| Early warning | CVE List `deltaLog.json` (its newest part, by byte range) + the new CVE records | 15 min | No |
 | Package lists | SSH → collector | Every 12 h, on unlock, and after a fix click | **Yes** |
 
 **Ecosystem mapping:**
@@ -237,13 +237,28 @@ rules:
 
 ### 4.5 Early warning (unconfirmed)
 
-1. Every 15 min, read new entries from the CVE List delta log.
-2. Keep only CVEs with severity ≥ 9 (from the CNA or ADP score) or listed in KEV.
-3. Match the CVE's vendor/product against installed source packages:
-   - exact name match plus a vendor sanity check
-   - plus a curated alias table (e.g. `OpenSSH → openssh`, `GNU C Library → glibc`, `Apache HTTP Server → apache2`, `Linux kernel → linux*`)
-4. Notify 🟡 *"Heads-up (unconfirmed)"*. It has no fix command, because none is known yet. Clicking it opens `mis show CVE-…` in Terminal.
-5. When distro data arrives, it is replaced by 🔴 *confirmed* or ✅ *"not affected"*.
+1. **Every 15 min, read what changed in the CVE List.**
+   - `cves/deltaLog.json` lists every change set of the last 30 days, newest first: about 37 MB, with a new set every ~11 min.
+   - Only its start is read with an HTTP range request: 64 KB covers the usual 15 minutes. After a longer gap it reads 1 MB, then 8 MB, then the whole file.
+   - The first run, or a gap longer than the log, starts from now. OSV covers anything older.
+2. **Read each new CVE record** (about 600 a day, a few KB each).
+3. **Keep the severe ones:** CVSS ≥ `rules.early_warning.min_severity` (default 9, from the CNA or CISA), or actively exploited (CISA KEV, or KEV noted in the record by CISA).
+4. **Match the record's products to installed source packages** (`internal/match`):
+   - Exact name after normalising case and punctuation (`XZ Utils` = `xz-utils`), from the CNA's and CISA's product and package names.
+   - A curated alias table, e.g. `OpenSSH → openssh`, `GNU C Library → glibc`, `Apache HTTP Server → apache2`, `xz → xz-utils`, `PostgreSQL → postgresql-NN`, `Linux kernel → the kernel`.
+   - **Vendor sanity check:** a bare product name only counts when the vendor is missing, known (an upstream project or distro), or names the product itself (`RsyncProject`). On two days of real CVEs this rejected "Git for Windows" → `git` and Tanium's "Patch" → `patch`.
+   - Skipped: language-registry packages (npm, PyPI, …), CMS plugins and themes, and other operating systems.
+5. **Skip it if the distro already has a record** (`UBUNTU-CVE-…`, `DEBIAN-CVE-…` on OSV), or the server already has a finding for that CVE. The regular check handles those.
+6. **Not severe yet, or no product named yet?** Watch it for 7 days: CISA often adds scores, products and KEV status to the record later, and every change to a watched CVE is read again.
+7. **Notify once:** 🟡 *"Heads-up · CVE-… · openssh"*, *"Not confirmed by your distro yet · may affect 2 servers · CVSS 9.8 · no fix yet"*. It has no buttons, because there is no fix command yet. Clicking it opens `mis show CVE-…`. It is never reminded.
+8. **It ends at the next regular check** after the distro speaks:
+   - **Confirmed:** a vulnerability finding exists for the server and CVE. The heads-up is removed and the normal alert takes over.
+   - **Not affected:** the distro has a record, but OSV doesn't report it for the installed version. You get ✅ *"not affected"*.
+   - **Expired:** no distro record after 30 days. It ends quietly.
+
+On a typical server (369 source packages), two days of real CVEs (1,236 records) gave three matches, all correct: apt, rsync, glibc. None was severe enough to notify.
+
+**Threshold note:** CVE-2024-6387 (regreSSHion) is scored 8.1, so the default `min_severity: 9` would not have raised an early warning for it. Lower it (e.g. 8) for more heads-ups, at the cost of more noise.
 
 ### 4.6 Notifications
 

@@ -39,7 +39,7 @@ One Vulnerability that applies to one Server through one source package. It has 
 _Avoid_: alert, hit, issue, match
 
 **Early warning**:
-An unconfirmed Finding from the CVE List, raised before the distro has assessed it. It has no Fix command.
+An unconfirmed Finding from the CVE List, raised before the distro has assessed it. It has no Fix command. It ends as **confirmed** (a Finding from distro data takes over), **not affected**, or **expired** (no distro data after 30 days).
 _Avoid_: pre-alert, heads-up (in code)
 
 **Confirmed**:

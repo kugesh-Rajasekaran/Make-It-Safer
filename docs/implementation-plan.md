@@ -95,7 +95,7 @@ For every server you own, always know which vulnerabilities affect it, and be on
 | M3 | Vulnerability checks | L | run `mis check` and see what's vulnerable where | ✅ Done |
 | M4 | Background service | M | reboot, unlock once, and checks run by themselves | ✅ Done |
 | M5 | Notifications and fix flow (Mac first) | L | click a server button and get SSH with the fix typed in | ✅ Built · S2/S3 on your Mac and Linux desktop |
-| M6 | Early warning | S | get heads-ups for critical CVEs within ~15 min | ⬜ |
+| M6 | Early warning | S | get heads-ups for critical CVEs within ~15 min | ✅ Done |
 | M7 | Setup wizard and polish | M | set everything up with `mis init` alone | ⬜ |
 
 ### M0 · Foundations (S)
@@ -193,6 +193,8 @@ Goal: design §4.5.
 | T-601 | `feat(cvelist)` poll the CVE List every 15 min, fetch new records, keep severity ≥ 9 or KEV | Recorded-feed tests |
 | T-602 | `feat(match)` vendor/product → installed source package matcher + alias table | Regression tests, including known false matches (Drupal "File Force Download" ≠ `file`) |
 | T-603 | `feat(findings)` early-warning lifecycle (unconfirmed → confirmed or not affected) + 🟡 notification | Replayed-feed tests |
+
+Built: the delta log is read by byte range (64 KB per run normally). Watched CVEs are re-read when CISA updates them. Early warnings expire after 30 days without distro data. Checked against two days of real CVEs and a typical server's packages; see design §4.5.
 
 **You check:** the first real heads-up arrives (expect about 1–2 a week) and later turns into "confirmed" or "not affected".
 
