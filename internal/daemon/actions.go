@@ -117,6 +117,7 @@ func (d *Daemon) followUp(server string) {
 			}
 			eng := d.newEngine(cfg)
 			if failed := eng.Refresh(d.ctx, key.Signer(), []config.Server{s}); len(failed) > 0 {
+				d.refreshFailed(failed)
 				continue
 			}
 			res, err := eng.Match(d.ctx, cfg.Servers)
@@ -149,6 +150,8 @@ func (d *Daemon) onClick(ev notify.Event) {
 		}
 	case strings.HasPrefix(id, string(findings.KindReboot)+":"):
 		err = d.fix(strings.TrimPrefix(id, string(findings.KindReboot)+":"), id)
+	case strings.HasPrefix(id, hostKeyPrefix):
+		err = d.openLocal("server", "verify", strings.TrimPrefix(id, hostKeyPrefix))
 	case strings.HasPrefix(id, string(findings.KindEarlyWarning)+":"):
 		err = d.openLocal("show", strings.TrimPrefix(id, string(findings.KindEarlyWarning)+":"))
 	case strings.HasPrefix(id, string(findings.KindEndOfLife)+":"):

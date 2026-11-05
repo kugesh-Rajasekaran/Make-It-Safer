@@ -353,3 +353,30 @@ func TestEarlyWarningNotifications(t *testing.T) {
 		}
 	}
 }
+
+func TestHostKeyMismatchAlerts(t *testing.T) {
+	paths := newInstall(t)
+	cfg, _ := config.Load(paths.Config)
+	cfg.Terminal = config.Terminal{App: "custom", Command: "true {script}"}
+	if err := cfg.Save(paths.Config); err != nil {
+		t.Fatal(err)
+	}
+	rec := newRecorder()
+	d := New(paths, "test", slog.New(slog.NewTextHandler(io.Discard, nil)), rec)
+	d.refreshFailed(map[string]error{
+		"web": apperr.New(apperr.ServerHostKeyMismatch, "web presents a different host key"),
+		"db":  apperr.New(apperr.ServerUnreachable, "cannot log in to db"), // ordinary failure: no alert
+	})
+	rec.mu.Lock()
+	shown := slices.Clone(rec.shown)
+	rec.mu.Unlock()
+	if len(shown) != 1 || shown[0].ID != "hostkey:web" || !shown[0].Urgent || !strings.Contains(shown[0].Title, "host key changed") {
+		t.Fatalf("alerts = %+v", shown)
+	}
+	d.onClick(notify.Event{NotificationID: "hostkey:web", Action: notify.Default})
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+	if len(rec.shown) != 1 {
+		t.Fatalf("the click failed: %+v", rec.shown[1:])
+	}
+}

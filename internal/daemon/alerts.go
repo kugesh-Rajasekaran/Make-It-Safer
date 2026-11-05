@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kugesh-rajasekaran/make-it-safer/internal/apperr"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/config"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/engine"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/findings"
@@ -88,6 +89,24 @@ func (d *Daemon) alert(res *engine.Result) {
 	}
 	if err := d.remind(); err != nil {
 		d.log.Warn("remind", "status", "error", "error", err)
+	}
+}
+
+const hostKeyPrefix = "hostkey:"
+
+// refreshFailed raises an alert for every server whose host key changed:
+// the connection was refused because someone may be intercepting it.
+func (d *Daemon) refreshFailed(failed map[string]error) {
+	for server, err := range failed {
+		if !apperr.Is(err, apperr.ServerHostKeyMismatch) {
+			continue
+		}
+		d.log.Warn("refresh", "status", "host key mismatch", "server", server)
+		_ = d.notifier.Show(notify.Notification{
+			ID: hostKeyPrefix + server, Title: "⚠ " + server + ": host key changed", Urgent: true, Sound: true,
+			Body: "Make-It-Safer stopped connecting: someone may be intercepting the connection. " +
+				"If you reinstalled the server, remove it and add it again. Click for details.",
+		})
 	}
 }
 

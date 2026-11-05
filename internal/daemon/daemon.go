@@ -185,7 +185,7 @@ func (d *Daemon) check(ctx context.Context, req Request) (*engine.Result, error)
 		if key == nil {
 			return nil, apperr.New(apperr.VaultLocked, "Make-It-Safer is locked; run: mis unlock (or check with --no-refresh)")
 		}
-		_ = eng.Refresh(ctx, key.Signer(), servers) // failures show up per server below
+		d.refreshFailed(eng.Refresh(ctx, key.Signer(), servers)) // failures also show up per server below
 	}
 	res, err := eng.Match(ctx, servers)
 	if err != nil {
@@ -245,7 +245,9 @@ func (d *Daemon) jobRefresh(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if failed := d.newEngine(cfg).Refresh(ctx, key.Signer(), cfg.Servers); len(failed) == len(cfg.Servers) && len(cfg.Servers) > 0 {
+	failed := d.newEngine(cfg).Refresh(ctx, key.Signer(), cfg.Servers)
+	d.refreshFailed(failed)
+	if len(failed) == len(cfg.Servers) && len(cfg.Servers) > 0 {
 		return apperr.New(apperr.ServerUnreachable, "could not refresh any server")
 	}
 	d.sched.trigger("match")
