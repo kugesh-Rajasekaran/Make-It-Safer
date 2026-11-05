@@ -134,8 +134,17 @@ func subject(f *findings.Finding) string {
 
 // line formats one finding on one line.
 func line(f *findings.Finding) string {
-	s := fmt.Sprintf("%s %-6s %-14s %s", icons[f.Priority], f.Priority, f.Server, subject(f))
+	icon, label := icons[f.Priority], f.Priority.String()
+	if f.Kind == findings.KindEarlyWarning {
+		icon, label = "🟡", "early"
+	}
+	s := fmt.Sprintf("%s %-6s %-14s %s", icon, label, f.Server, subject(f))
 	switch {
+	case f.Kind == findings.KindEarlyWarning:
+		s += "  unconfirmed: your distro hasn't assessed it yet"
+		if f.Score > 0 {
+			s += fmt.Sprintf(" · CVSS %.1f", f.Score)
+		}
 	case f.Kind != findings.KindVulnerability:
 		s += " — " + clean(f.Summary)
 	case f.HasFix():
@@ -247,14 +256,22 @@ func (a *app) showCmd() *cobra.Command {
 					_, _ = fmt.Fprint(w, " · actively exploited (CISA KEV)")
 				}
 				_, _ = fmt.Fprintf(w, "\n\nServers:\n")
+				early := false
 				for _, m := range matches {
-					state := string(m.State)
+					state, fixed := string(m.State), cmp.Or(m.Fixed, "no fix yet")
 					if !m.Open() {
-						state = "fixed " + m.ResolvedAt.Local().Format("2006-01-02")
+						state = cmp.Or(m.Resolution, "fixed") + " " + m.ResolvedAt.Local().Format("2006-01-02")
 					}
-					_, _ = fmt.Fprintf(w, "  %s  %s %s → %s  [%s]\n", m.Server, m.Source, m.Installed, cmp.Or(m.Fixed, "no fix yet"), state)
+					if m.Kind == findings.KindEarlyWarning {
+						early, fixed, state = true, "not assessed by your distro yet", "early warning, "+state
+					}
+					_, _ = fmt.Fprintf(w, "  %s  %s %s → %s  [%s]\n", m.Server, m.Source, m.Installed, fixed, state)
 				}
-				_, _ = fmt.Fprintf(w, "\nMore: https://ubuntu.com/security/%s · https://security-tracker.debian.org/tracker/%s\n", cve, cve)
+				if early {
+					_, _ = fmt.Fprintln(w, "\nEarly warnings come from the CVE List before your distro has assessed the CVE.\n"+
+						"They're matched by product name, so they may not apply. The distro's verdict replaces them.")
+				}
+				_, _ = fmt.Fprintf(w, "\nMore: https://www.cve.org/CVERecord?id=%s · https://ubuntu.com/security/%s · https://security-tracker.debian.org/tracker/%s\n", cve, cve, cve)
 			})
 		},
 	}
