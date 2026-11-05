@@ -31,4 +31,26 @@ const (
 	VaultUnlockFailed       = "VAULT_UNLOCK_FAILED"
 	VaultUnlockRateLimited  = "VAULT_UNLOCK_RATE_LIMITED"
 	VaultLocked             = "VAULT_LOCKED"
+
+	// Servers and SSH
+	ServerExists          = "SERVER_EXISTS"
+	ServerNotFound        = "SERVER_NOT_FOUND"
+	ServerUnreachable     = "SERVER_UNREACHABLE"
+	ServerHostKeyMismatch = "SERVER_HOSTKEY_MISMATCH"
+	ServerHostKeyUnknown  = "SERVER_HOSTKEY_UNKNOWN"
+	ServerHostKeyRejected = "SERVER_HOSTKEY_REJECTED"
+	ServerAuthFailed      = "SERVER_AUTH_FAILED"
+	ServerCommandFailed   = "SERVER_COMMAND_FAILED"
+	ServerUnsupportedOS   = "SERVER_UNSUPPORTED_OS"
+
+	// Server setup
+	SetupSSHMissing   = "SETUP_SSH_MISSING"
+	SetupFailed       = "SETUP_FAILED"
+	SetupVerifyFailed = "SETUP_VERIFY_FAILED"
+	SetupInvalidKey   = "SETUP_INVALID_KEY"
+
+	// Inventories (collector output)
+	InventoryInvalid  = "INVENTORY_INVALID"
+	InventoryTooLarge = "INVENTORY_TOO_LARGE"
+	InventoryNotFound = "INVENTORY_NOT_FOUND"
 )
