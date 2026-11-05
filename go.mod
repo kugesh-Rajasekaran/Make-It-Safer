@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	github.com/awnumar/memguard v0.23.0
+	github.com/godbus/dbus/v5 v5.2.4
 	github.com/sethvargo/go-diceware v0.6.0
 	github.com/spf13/cobra v1.10.2
 	github.com/trustelem/zxcvbn v1.0.1
