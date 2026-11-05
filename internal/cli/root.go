@@ -16,6 +16,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/apperr"
+	"github.com/kugesh-rajasekaran/make-it-safer/internal/config"
+	"github.com/kugesh-rajasekaran/make-it-safer/internal/daemon"
+	"github.com/kugesh-rajasekaran/make-it-safer/internal/vault"
 )
 
 // app carries what every command needs: output mode, streams and logging.
@@ -27,6 +30,11 @@ type app struct {
 	stdout  io.Writer
 	stderr  io.Writer
 	log     *slog.Logger
+
+	unlocked *vault.Key // set while mis init holds the key, so it isn't asked for again
+	// Replaced in tests.
+	kdf            func() vault.Params
+	installService func(config.Paths) (*daemon.ServiceInfo, error)
 }
 
 // Execute runs mis with the process arguments and returns the exit code.
@@ -38,13 +46,24 @@ func Execute() int {
 }
 
 func run(args []string, stdin *os.File, stdout, stderr io.Writer) int {
-	a := &app{
+	return newApp(args, stdin, stdout, stderr).execute(args)
+}
+
+func newApp(args []string, stdin *os.File, stdout, stderr io.Writer) *app {
+	return &app{
 		json:   slices.Contains(args, "--json"), // known even if flag parsing fails
 		stdin:  stdin,
 		stdout: stdout,
 		stderr: stderr,
 		log:    slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: slog.LevelWarn})),
+
+		kdf:            vault.DefaultParams,
+		installService: daemon.InstallService,
 	}
+}
+
+func (a *app) execute(args []string) int {
+	stdout, stderr := a.stdout, a.stderr
 	root := a.rootCmd()
 	root.SetArgs(args)
 	root.SetOut(stdout)

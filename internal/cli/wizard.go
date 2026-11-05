@@ -1,0 +1,265 @@
+package cli
+
+import (
+	"runtime"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/kugesh-rajasekaran/make-it-safer/internal/apperr"
+	"github.com/kugesh-rajasekaran/make-it-safer/internal/config"
+	"github.com/kugesh-rajasekaran/make-it-safer/internal/daemon"
+	"github.com/kugesh-rajasekaran/make-it-safer/internal/secret"
+	"github.com/kugesh-rajasekaran/make-it-safer/internal/setup"
+	"github.com/kugesh-rajasekaran/make-it-safer/internal/termlaunch"
+	"github.com/kugesh-rajasekaran/make-it-safer/internal/vault"
+)
+
+// wizard walks through the setup steps after the key exists. A failed step
+// is reported and skipped (each says how to do it later); only a closed
+// input stops the wizard.
+type wizard struct {
+	a     *app
+	paths config.Paths
+	cfg   *config.Config
+	pass  secret.Bytes // owned (and wiped) by runInit
+}
+
+func (w *wizard) run(res *initResult) error {
+	if err := w.terminal(); err != nil {
+		return err
+	}
+	if err := w.rules(); err != nil {
+		return err
+	}
+	if err := w.cfg.Save(w.paths.Config); err != nil {
+		return err
+	}
+	servers, err := w.servers()
+	res.Servers = servers
+	if err != nil {
+		return err
+	}
+	if res.Service, res.Unlocked, err = w.service(); err != nil {
+		return err
+	}
+	if res.Service {
+		if err := w.notifyTest(); err != nil {
+			return err
+		}
+	}
+	if res.Unlocked && len(servers) > 0 {
+		w.firstCheck()
+	}
+	return nil
+}
+
+// close wipes the key the wizard unlocked for adding servers.
+func (w *wizard) close() {
+	if w.a.unlocked != nil {
+		w.a.unlocked.Destroy()
+		w.a.unlocked = nil
+	}
+}
+
+// terminalApps are the choices offered on each system.
+func terminalApps(goos string) []string {
+	if goos == "darwin" {
+		return []string{"default", "iterm2", "ghostty", "kitty", "alacritty", "wezterm", "custom"}
+	}
+	return []string{"default", "gnome-terminal", "kgx", "konsole", "xfce4-terminal", "kitty", "alacritty", "wezterm", "ghostty", "xterm", "custom"}
+}
+
+func (w *wizard) terminal() error {
+	a := w.a
+	a.say("\n2. Terminal\nA notification's server button opens an SSH session in this app, with the fix typed in.\n")
+	apps, def := terminalApps(runtime.GOOS), "your desktop's terminal"
+	if runtime.GOOS == "darwin" {
+		def = "Terminal"
+	}
+	a.say("Choices: %s (\"default\" is %s)\n", strings.Join(apps, ", "), def)
+	for {
+		app, err := a.ask("Terminal app", w.cfg.Terminal.App)
+		if err != nil {
+			return err
+		}
+		if !slices.Contains(apps, app) {
+			a.say("Please pick one of the choices.\n")
+			continue
+		}
+		t := config.Terminal{App: app}
+		if app == "custom" {
+			if t.Command, err = a.ask("Command that opens a script in your terminal, with {script} for its path (e.g. foot {script})", ""); err != nil {
+				return err
+			}
+			if !strings.Contains(t.Command, "{script}") {
+				a.say("The command needs {script} in it.\n")
+				continue
+			}
+		}
+		if err := (termlaunch.Launcher{Terminal: t}).Available(); err != nil {
+			a.say("⚠ %s. Choose another, or install it later.\n", apperr.MessageOf(err))
+			keep, err := a.confirm("Keep this choice anyway?", false)
+			if err != nil {
+				return err
+			}
+			if !keep {
+				continue
+			}
+		}
+		w.cfg.Terminal = t
+		return nil
+	}
+}
+
+func (w *wizard) rules() error {
+	a, r := w.a, &w.cfg.Rules
+	a.say("\n3. Alerts\nActively exploited vulnerabilities, and fixable ones with CVSS 9 or more, are always urgent.\n")
+	min, err := w.askScore("Also alert for fixable vulnerabilities from CVSS", r.AlertWhen.MinSeverity, false)
+	if err != nil {
+		return err
+	}
+	r.AlertWhen.MinSeverity = min
+	a.say("Early warnings come before your distro confirms a vulnerability, matched by product name.\n")
+	early, err := w.askScore("Early warnings from CVSS (or \"off\")", r.EarlyWarning.MinSeverity, true)
+	if err != nil {
+		return err
+	}
+	r.EarlyWarning.Enabled = early >= 0
+	if early >= 0 {
+		r.EarlyWarning.MinSeverity = early
+	}
+	sound, err := a.confirm("Play a sound with alerts?", w.cfg.Notifications.Sound)
+	if err != nil {
+		return err
+	}
+	w.cfg.Notifications.Sound = sound
+	return nil
+}
+
+// askScore asks for a CVSS score from 0 to 10; with offOK, "off" gives -1.
+func (w *wizard) askScore(question string, def float64, offOK bool) (float64, error) {
+	for {
+		answer, err := w.a.ask(question, strconv.FormatFloat(def, 'f', 1, 64))
+		if err != nil {
+			return 0, err
+		}
+		if offOK && strings.EqualFold(answer, "off") {
+			return -1, nil
+		}
+		if v, err := strconv.ParseFloat(answer, 64); err == nil && v >= 0 && v <= 10 {
+			return v, nil
+		}
+		w.a.say("Please type a number from 0 to 10.\n")
+	}
+}
+
+func (w *wizard) servers() ([]string, error) {
+	a := w.a
+	a.say("\n4. Servers\nFor each server, a read-only \"mis\" user is created through your own ssh login.\n" +
+		"Have your usual `ssh` login ready (keys or password: Make-It-Safer never sees it).\n")
+	var added []string
+	for {
+		question := "Add a server now?"
+		if len(added) > 0 {
+			question = "Add another server?"
+		}
+		more, err := a.confirm(question, len(added) == 0)
+		if err != nil || !more {
+			return added, err
+		}
+		if a.unlocked == nil { // unlock once, with the passphrase from step 1
+			if a.unlocked, err = vault.Unlock(w.paths.KeyFile, w.pass); err != nil {
+				return added, err
+			}
+		}
+		reports, err := a.addServer("", addOptions{port: 22})
+		if len(reports) > 0 {
+			writeReports(a.stderr, reports)
+			added = append(added, reports[0].Server)
+		}
+		switch {
+		case apperr.Is(err, apperr.CLIInputAborted) && len(reports) == 0:
+			a.say("Skipped. Add it later with: mis server add\n")
+		case err != nil:
+			a.say("✗ %s\n", apperr.MessageOf(err))
+		case slices.ContainsFunc(reports, func(r *setup.Report) bool { return !r.OK }):
+			a.say("⚠ Some checks failed (✗ above). Check again later with: mis server verify\n")
+		}
+	}
+}
+
+// service installs and starts the background service, and unlocks it with
+// the passphrase from step 1.
+func (w *wizard) service() (running, unlocked bool, err error) {
+	a := w.a
+	a.say("\n5. Background service\nIt checks your servers on a schedule and shows notifications. It starts at every\n" +
+		"login, locked; after each restart you unlock it once with your passphrase.\n")
+	ok, err := a.confirm("Install and start it now?", true)
+	if err != nil {
+		return false, false, err
+	}
+	if !ok {
+		a.say("Later: mis service install\n")
+		return false, false, nil
+	}
+	if _, err := a.installService(w.paths); err != nil {
+		a.say("✗ %s\n  Try again later: mis service install\n", apperr.MessageOf(err))
+		return false, false, nil
+	}
+	for range 50 {
+		if daemon.Running(w.paths) {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if !daemon.Running(w.paths) {
+		a.say("✗ The background service didn't start. See: mis service logs\n")
+		return false, false, nil
+	}
+	a.say("Unlocking it…\n")
+	pass := slices.Clone([]byte(w.pass)) // Call wipes what it sends
+	if err := daemon.Call(w.paths, daemon.Request{Op: daemon.OpUnlock, Passphrase: pass}, nil, 2*time.Minute); err != nil {
+		a.say("✗ %s\n  Unlock it later: mis unlock\n", apperr.MessageOf(err))
+		return true, false, nil
+	}
+	a.say("✓ Running and unlocked.\n")
+	return true, true, nil
+}
+
+func (w *wizard) notifyTest() error {
+	a := w.a
+	a.say("\n6. Notifications\n")
+	if err := daemon.Call(w.paths, daemon.Request{Op: daemon.OpNotify}, nil, 10*time.Second); err != nil {
+		a.say("✗ %s\n  Try again later: mis notify test\n", apperr.MessageOf(err))
+		return nil
+	}
+	seen, err := a.confirm("A test notification with two buttons should be on your screen. Do you see it?", true)
+	if err != nil {
+		return err
+	}
+	if seen {
+		a.say("Click one of its buttons: your terminal should open and show mis status.\n")
+		return nil
+	}
+	if runtime.GOOS == "darwin" {
+		a.say("On macOS, notifications come from the helper app in ~/Applications (installed by make install).\n" +
+			"In System Settings → Notifications → Make-It-Safer Notifier, allow notifications and pick the\n" +
+			"\"Alerts\" style, so they stay on screen. Then try: mis notify test\n")
+	} else {
+		a.say("Your desktop needs a notification service (GNOME, KDE and most desktops have one).\nThen try: mis notify test, or see: mis doctor\n")
+	}
+	return nil
+}
+
+func (w *wizard) firstCheck() {
+	a := w.a
+	a.say("\n7. First check\nReading your servers' package lists and matching them (this can take a minute)…\n")
+	var res daemon.CheckResult
+	if err := daemon.Call(w.paths, daemon.Request{Op: daemon.OpCheck, Refresh: true}, &res, 10*time.Minute); err != nil {
+		a.say("✗ %s\n  Try again later: mis check\n", apperr.MessageOf(err))
+		return
+	}
+	printCheck(a.stderr, &res)
+}

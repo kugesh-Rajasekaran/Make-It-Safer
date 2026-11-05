@@ -60,72 +60,82 @@ proves the restrictions from the outside and reads the package list.`,
 }
 
 func (a *app) runServerAdd(name string, o addOptions) error {
-	ctx := context.Background()
-	paths, cfg, err := a.setup()
+	reports, err := a.addServer(name, o)
 	if err != nil {
 		return err
 	}
+	return a.printReports(reports)
+}
+
+// addServer sets up one server and verifies it. The server is saved once
+// its setup script ran, even if a later check fails.
+func (a *app) addServer(name string, o addOptions) ([]*setup.Report, error) {
+	ctx := context.Background()
+	paths, cfg, err := a.setup()
+	if err != nil {
+		return nil, err
+	}
 	pub, err := vault.PublicKeyFromFile(paths.KeyFile)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	s := config.Server{Name: name, Host: o.host, Port: o.port, AdminSSH: o.admin}
 	if s.Name == "" {
 		if s.Name, err = a.ask("Name for this server (e.g. ovh-web-1)", ""); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	if _, exists := cfg.Server(s.Name); exists {
-		return apperr.New(apperr.ServerExists, s.Name+" is already set up; check it with: mis server verify "+s.Name)
+		return nil, apperr.New(apperr.ServerExists, s.Name+" is already set up; check it with: mis server verify "+s.Name)
 	}
 	if s.Host == "" {
 		if s.Host, err = a.ask("IP address or hostname", ""); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	if s.AdminSSH == "" {
 		if s.AdminSSH, err = a.ask("Your own login, as you'd type after `ssh`", "root@"+s.Host); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	if err := s.Validate(); err != nil {
-		return apperr.Wrap(apperr.ConfigInvalid, err, "invalid server")
+		return nil, apperr.Wrap(apperr.ConfigInvalid, err, "invalid server")
 	}
 
 	// 1. Pin the host key, after you've confirmed it.
 	t := sshx.TargetOf(s)
 	key, err := sshx.FetchHostKey(ctx, t)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	fp := sshx.Fingerprint(key)
 	switch {
 	case o.fingerprint != "":
 		if o.fingerprint != fp {
-			return apperr.New(apperr.ServerHostKeyRejected, fmt.Sprintf("host key is %s, not the expected %s; nothing was changed", fp, o.fingerprint))
+			return nil, apperr.New(apperr.ServerHostKeyRejected, fmt.Sprintf("host key is %s, not the expected %s; nothing was changed", fp, o.fingerprint))
 		}
 	case sshx.UserKnownHost(t, key) == "match":
 		a.say("✓ Host key %s matches your ~/.ssh/known_hosts\n", fp)
 	case sshx.UserKnownHost(t, key) == "mismatch":
-		return apperr.New(apperr.ServerHostKeyMismatch, fmt.Sprintf(
+		return nil, apperr.New(apperr.ServerHostKeyMismatch, fmt.Sprintf(
 			"%s presents host key %s, which differs from your ~/.ssh/known_hosts; someone may be intercepting the connection. Nothing was changed", s.Host, fp))
 	default:
 		a.say("Host key fingerprint of %s:\n    %s\nCompare it with your provider's console, or run on the server:\n    ssh-keygen -lf /etc/ssh/ssh_host_%s_key.pub\n",
 			s.Host, fp, hostKeyFile(key.Type()))
 		ok, err := a.confirm("Does it match?", false)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if !ok {
-			return apperr.New(apperr.ServerHostKeyRejected, "host key not confirmed; nothing was changed")
+			return nil, apperr.New(apperr.ServerHostKeyRejected, "host key not confirmed; nothing was changed")
 		}
 	}
 
 	// 2. Run the setup script through your own ssh login.
 	script, err := setup.Script(pub)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	a.say("\nThe setup script, run through `ssh %s`:\n", s.AdminSSH)
 	for _, line := range setup.Summary {
@@ -133,35 +143,31 @@ func (a *app) runServerAdd(name string, o addOptions) error {
 	}
 	if !o.yes {
 		if show, err := a.confirm("Show the full script first?", false); err != nil {
-			return err
+			return nil, err
 		} else if show {
 			a.say("\n%s\n", script)
 		}
 		if run, err := a.confirm("Run it now?", true); err != nil {
-			return err
+			return nil, err
 		} else if !run {
-			return apperr.New(apperr.CLIInputAborted, "cancelled; nothing was changed. You can also run it yourself: mis server setup-script")
+			return nil, apperr.New(apperr.CLIInputAborted, "cancelled; nothing was changed. You can also run it yourself: mis server setup-script")
 		}
 	}
 	if err := setup.RunAsAdmin(ctx, s, script, a.stdin, a.stderr, a.stderr); err != nil {
-		return err
+		return nil, err
 	}
 
 	// 3. Remember the server, then prove the restrictions from the outside.
 	hk := sshx.HostKeys{Path: paths.KnownHosts}
 	if err := hk.Pin(t, key); err != nil {
-		return err
+		return nil, err
 	}
 	cfg.Servers = append(cfg.Servers, s)
 	if err := cfg.Save(paths.Config); err != nil {
-		return err
+		return nil, err
 	}
 	a.say("\n✓ %s is set up. Checking it from the outside…\n", s.Name)
-	reports, err := a.verifyServers(ctx, paths, []config.Server{s})
-	if err != nil {
-		return err
-	}
-	return a.printReports(reports)
+	return a.verifyServers(ctx, paths, []config.Server{s})
 }
 
 func (a *app) serverVerifyCmd() *cobra.Command {
@@ -189,11 +195,14 @@ func (a *app) serverVerifyCmd() *cobra.Command {
 // verifyServers unlocks the key once and verifies each server, saving the
 // package lists it reads on the way.
 func (a *app) verifyServers(ctx context.Context, paths config.Paths, servers []config.Server) ([]*setup.Report, error) {
-	key, err := a.unlockKey(paths)
-	if err != nil {
-		return nil, err
+	key := a.unlocked
+	if key == nil {
+		var err error
+		if key, err = a.unlockKey(paths); err != nil {
+			return nil, err
+		}
+		defer key.Destroy()
 	}
-	defer key.Destroy()
 	hk := sshx.HostKeys{Path: paths.KnownHosts}
 	var reports []*setup.Report
 	for _, s := range servers {
@@ -213,33 +222,34 @@ func (a *app) verifyServers(ctx context.Context, paths config.Paths, servers []c
 
 func (a *app) printReports(reports []*setup.Report) error {
 	failed := slices.ContainsFunc(reports, func(r *setup.Report) bool { return !r.OK })
-	err := a.emit(reports, func(w io.Writer) {
-		for _, r := range reports {
-			_, _ = fmt.Fprintf(w, "\n%s", r.Server)
-			if r.OS != "" {
-				_, _ = fmt.Fprintf(w, " · %s · %d packages", r.OS, r.Packages)
-			}
-			_, _ = fmt.Fprintln(w)
-			for _, c := range r.Checks {
-				mark := "✓"
-				if !c.OK {
-					mark = "✗"
-				}
-				line := "  " + mark + " " + c.Name
-				if c.Detail != "" {
-					line += " — " + clean(c.Detail)
-				}
-				_, _ = fmt.Fprintln(w, line)
-			}
-		}
-	})
-	if err != nil {
+	if err := a.emit(reports, func(w io.Writer) { writeReports(w, reports) }); err != nil {
 		return err
 	}
 	if failed {
 		return apperr.New(apperr.SetupVerifyFailed, "some checks failed (marked ✗ above)")
 	}
 	return nil
+}
+
+func writeReports(w io.Writer, reports []*setup.Report) {
+	for _, r := range reports {
+		_, _ = fmt.Fprintf(w, "\n%s", r.Server)
+		if r.OS != "" {
+			_, _ = fmt.Fprintf(w, " · %s · %d packages", r.OS, r.Packages)
+		}
+		_, _ = fmt.Fprintln(w)
+		for _, c := range r.Checks {
+			mark := "✓"
+			if !c.OK {
+				mark = "✗"
+			}
+			line := "  " + mark + " " + c.Name
+			if c.Detail != "" {
+				line += " — " + clean(c.Detail)
+			}
+			_, _ = fmt.Fprintln(w, line)
+		}
+	}
 }
 
 type serverRow struct {
