@@ -93,7 +93,7 @@ For every server you own, always know which vulnerabilities affect it, and be on
 | M1 | Passphrase and key | M | create your passphrase and encrypted key | ✅ Done |
 | M2 | Read-only server access | M | set up a server and prove it's read-only | ✅ Done |
 | M3 | Vulnerability checks | L | run `mis check` and see what's vulnerable where | ✅ Done |
-| M4 | Background service | M | reboot, unlock once, and checks run by themselves | ⬜ |
+| M4 | Background service | M | reboot, unlock once, and checks run by themselves | ✅ Done |
 | M5 | Notifications and fix flow (Mac first) | L | click a server button and get SSH with the fix typed in | ⬜ |
 | M6 | Early warning | S | get heads-ups for critical CVEs within ~15 min | ⬜ |
 | M7 | Setup wizard and polish | M | set everything up with `mis init` alone | ⬜ |

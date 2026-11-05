@@ -157,7 +157,7 @@ The key is then pinned. A mismatch later blocks the connection and triggers an u
 
 - **Install:** `mis service install` creates:
   - macOS: `~/Library/LaunchAgents/com.makeitsafer.daemon.plist` (`RunAtLoad`, `KeepAlive`)
-  - Linux: `~/.config/systemd/user/mis.service` (`WantedBy=default.target`)
+  - Linux: `~/.config/systemd/user/mis.service` (`WantedBy=graphical-session.target`, so it starts with your desktop and can show notifications)
 - It runs as **your user inside your desktop session**, which is needed for notifications and opening terminals.
 - **CLI ↔ daemon:**
   - Unix socket, mode 0600. The peer is checked with `SO_PEERCRED`/`getpeereid` (same user only).
@@ -174,12 +174,12 @@ The key is then pinned. A mismatch later blocks the connection and triggers an u
 
 | Job | Source | Default interval | Needs unlock? |
 |---|---|---|---|
-| Feed change check | OSV `modified_id.csv` for Debian and Ubuntu (HEAD + ETag, a few bytes) | 30 min | No |
+| Feed change check | OSV `modified_id.csv` for Debian and Ubuntu (HEAD + ETag, a few bytes), plus the CISA KEV catalog (ETag) | 30 min | No |
 | Match | OSV `POST /v1/querybatch` (one request per server, ≤ 1000 packages) | When a feed changed, and every 6 h regardless | No (uses saved package lists) |
 | Vulnerability details | OSV `GET /v1/vulns/{id}`, cached by `modified` time | On new or changed IDs | No |
-| Exploited list | CISA KEV JSON (GitHub mirror as fallback), ETag | 1 h | No |
-| Exploit probability | EPSS API, only for CVEs in open findings | Daily | No |
-| OS end-of-life | endoflife.date | Daily | No |
+| Exploited list | CISA KEV JSON (GitHub mirror as fallback, saved copy when offline) | With the feed check | No |
+| Exploit probability | EPSS API, only for findings that can alert | With each match | No |
+| OS end-of-life | endoflife.date | With each match | No |
 | Early warning | CVE List `deltaLog.json` | 15 min | No |
 | Package lists | SSH → collector | Every 12 h, on unlock, and after a fix click | **Yes** |
 
