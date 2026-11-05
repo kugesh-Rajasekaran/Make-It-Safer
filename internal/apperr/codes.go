@@ -61,6 +61,7 @@ const (
 	FeedsInvalidData    = "FEEDS_INVALID_DATA"
 	OSVQueryFailed      = "OSV_QUERY_FAILED"
 	CVEInvalidID        = "CVE_INVALID_ID"
+	CVEListFailed       = "CVE_LIST_READ_FAILED"
 
 	// Background service
 	DaemonNotRunning     = "DAEMON_NOT_RUNNING"
