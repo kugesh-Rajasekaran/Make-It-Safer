@@ -382,7 +382,7 @@ The baseline is **NIST SP 800-63B-4** (final, August 2025), §3.1.1.2 *Password 
 | Strength | Go zxcvbn port (chosen in M1) + embedded blocklist |
 | Linux notifications | `godbus/dbus/v5` |
 | macOS notifications | Swift helper app (SwiftPM), UserNotifications framework |
-| Config | YAML (`gopkg.in/yaml.v3`); state as JSON with atomic writes |
+| Config | YAML (`go.yaml.in/yaml/v3`, the maintained successor of `gopkg.in/yaml.v3`); state as JSON with atomic writes |
 | Install | From source: `make install` builds `mis` and the macOS helper (ad-hoc signed) |
 
 The package layout is in `CLAUDE.md` (Layout).

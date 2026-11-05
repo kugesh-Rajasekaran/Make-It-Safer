@@ -72,6 +72,8 @@ Standards are adapted from the DineSynk repo (working style, engineering princip
 ```
 cmd/mis/                 main
 internal/cli/            commands (cobra)
+internal/apperr/         error type + registry of area-prefixed codes
+internal/secret/         secret byte type that never prints, logs or marshals
 internal/daemon/         scheduler, socket server, lock state
 internal/vault/          passphrase policy, key file, secure memory
 internal/sshx/           SSH client, host-key pinning, collector call
