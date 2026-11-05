@@ -5,6 +5,7 @@
 package cli
 
 import (
+	"bufio"
 	"errors"
 	"io"
 	"log/slog"
@@ -22,6 +23,7 @@ type app struct {
 	json    bool
 	verbose bool
 	stdin   *os.File
+	in      *bufio.Reader // line reader over stdin for ordinary prompts
 	stdout  io.Writer
 	stderr  io.Writer
 	log     *slog.Logger
@@ -78,7 +80,7 @@ fix command already typed in.`,
 		return apperr.Wrap(apperr.CLIUsage, err, "invalid flag")
 	})
 
-	root.AddCommand(a.versionCmd(), a.initCmd(), a.passphraseCmd())
+	root.AddCommand(a.versionCmd(), a.initCmd(), a.passphraseCmd(), a.serverCmd())
 	return root
 }
 
