@@ -108,7 +108,7 @@ func (d *Daemon) dispatch(ctx context.Context, req Request) (any, error) {
 }
 
 func (d *Daemon) status() Status {
-	return Status{Version: d.version, Locked: !d.unlocked(), Started: d.started, Notifier: d.notifier.Describe(), Jobs: d.sched.snapshot()}
+	return Status{Version: d.version, Locked: !d.unlocked(), Started: d.started, Notifier: d.notifier.Describe(), Ready: d.notifier.Ready(), Jobs: d.sched.snapshot()}
 }
 
 func (d *Daemon) unlocked() bool {

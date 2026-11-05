@@ -170,5 +170,9 @@ func (d *DBus) Describe() string {
 	return s
 }
 
+// Ready is true: a notification server answered (resident notifications
+// stay where the desktop supports them).
+func (d *DBus) Ready() bool { return true }
+
 // Close disconnects from the bus.
 func (d *DBus) Close() error { return d.conn.Close() }

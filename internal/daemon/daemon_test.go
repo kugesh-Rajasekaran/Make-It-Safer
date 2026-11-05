@@ -52,6 +52,7 @@ func (r *recorder) Remove(id string) error {
 
 func (r *recorder) Events() <-chan notify.Event { return r.events }
 func (r *recorder) Describe() string            { return "test" }
+func (r *recorder) Ready() bool                 { return true }
 func (r *recorder) Close() error                { return nil }
 
 func (r *recorder) ids() []string {

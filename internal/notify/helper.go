@@ -197,6 +197,14 @@ func (h *Helper) Describe() string {
 	return "macOS (Alerts style)"
 }
 
+// Ready reports whether the helper is connected, allowed to notify and set
+// to the Alerts style.
+func (h *Helper) Ready() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.conn != nil && h.authorized && h.alertStyle == "alert"
+}
+
 // Close stops listening.
 func (h *Helper) Close() error {
 	h.mu.Lock()

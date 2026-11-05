@@ -55,6 +55,7 @@ type Status struct {
 	Locked   bool                 `json:"locked"`
 	Started  time.Time            `json:"started"`
 	Notifier string               `json:"notifier"`
+	Ready    bool                 `json:"notifier_ready"` // notifications show and stay on screen
 	Jobs     map[string]*JobState `json:"jobs"`
 }
 

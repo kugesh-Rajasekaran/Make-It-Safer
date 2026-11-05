@@ -40,6 +40,7 @@ type Notifier interface {
 	Remove(id string) error
 	Events() <-chan Event
 	Describe() string // for mis status, e.g. "macOS (Alerts style)"
+	Ready() bool      // notifications appear on screen and stay there
 	Close() error
 }
 
@@ -71,6 +72,9 @@ func (n *Log) Events() <-chan Event { return n.events }
 
 // Describe says notifications go to the log.
 func (n *Log) Describe() string { return "log only (no desktop notifications)" }
+
+// Ready is false: nothing appears on screen.
+func (n *Log) Ready() bool { return false }
 
 // Close does nothing.
 func (n *Log) Close() error { return nil }
