@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/apperr"
+	"github.com/kugesh-rajasekaran/make-it-safer/internal/config"
 )
 
 // listen opens the socket with owner-only permissions. A stale socket from a
@@ -57,7 +58,7 @@ func (d *Daemon) serve(ctx context.Context, l *net.UnixListener) {
 
 func (d *Daemon) handle(ctx context.Context, conn *net.UnixConn) {
 	defer func() { _ = conn.Close() }()
-	if uid, err := peerUID(conn); err != nil || uid != os.Getuid() {
+	if uid, err := config.PeerUID(conn); err != nil || uid != os.Getuid() {
 		d.log.Warn("connection refused", "reason", "different user or unknown peer")
 		writeResponse(conn, nil, apperr.New(apperr.DaemonPeerRejected, "only your own user can talk to the background service"))
 		return
