@@ -48,7 +48,10 @@ func InstallService(paths config.Paths) (*ServiceInfo, error) {
 	if _, err := run("systemctl", "--user", "daemon-reload"); err != nil {
 		return nil, err
 	}
-	if _, err := run("systemctl", "--user", "enable", "--now", unitName); err != nil {
+	if _, err := run("systemctl", "--user", "enable", unitName); err != nil {
+		return nil, err
+	}
+	if _, err := run("systemctl", "--user", "restart", unitName); err != nil { // picks up a new mis binary
 		return nil, err
 	}
 	return ServiceState(paths), nil
