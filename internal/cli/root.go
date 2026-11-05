@@ -80,7 +80,8 @@ fix command already typed in.`,
 		return apperr.Wrap(apperr.CLIUsage, err, "invalid flag")
 	})
 
-	root.AddCommand(a.versionCmd(), a.initCmd(), a.passphraseCmd(), a.serverCmd())
+	root.AddCommand(a.versionCmd(), a.initCmd(), a.passphraseCmd(), a.serverCmd(),
+		a.checkCmd(), a.findingsCmd(), a.showCmd(), a.ackCmd())
 	return root
 }
 
