@@ -78,6 +78,7 @@ func (d *Daemon) jobs() []*job {
 		{name: "feeds", every: 30 * time.Minute, run: d.jobFeeds},
 		{name: "refresh", every: 12 * time.Hour, needsKey: true, run: d.jobRefresh},
 		{name: "match", every: 6 * time.Hour, run: d.jobMatch},
+		{name: "early", every: 15 * time.Minute, run: d.jobEarly},
 		{name: "remind", every: 15 * time.Minute, run: func(context.Context) error { return d.remind() }},
 	}
 }
@@ -260,6 +261,23 @@ func (d *Daemon) jobMatch(ctx context.Context) error {
 		return nil
 	}
 	res, err := d.newEngine(cfg).Match(ctx, cfg.Servers)
+	if err != nil {
+		return err
+	}
+	d.alert(res)
+	return nil
+}
+
+// jobEarly looks for early warnings in the CVE List.
+func (d *Daemon) jobEarly(ctx context.Context) error {
+	cfg, err := config.Load(d.paths.Config)
+	if err != nil {
+		return err
+	}
+	if len(cfg.Servers) == 0 || !cfg.Rules.EarlyWarning.Enabled {
+		return nil
+	}
+	res, err := d.newEngine(cfg).EarlyWarnings(ctx, cfg.Servers)
 	if err != nil {
 		return err
 	}

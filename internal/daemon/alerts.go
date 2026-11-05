@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"slices"
@@ -71,6 +72,10 @@ func (d *Daemon) alert(res *engine.Result) {
 				continue
 			}
 			first := res.Changes.Resolved[slices.IndexFunc(res.Changes.Resolved, func(f *findings.Finding) bool { return groupKey(f) == key })]
+			if first.Kind == findings.KindEarlyWarning {
+				d.earlyWarningEnded(key, first, res.Changes.Resolved)
+				continue
+			}
 			_ = d.notifier.Show(notify.Notification{ID: key, Title: "✅ " + title(first), Body: "Fixed on all servers."})
 			d.mu.Lock()
 			delete(d.clicked, key)
@@ -84,6 +89,23 @@ func (d *Daemon) alert(res *engine.Result) {
 	if err := d.remind(); err != nil {
 		d.log.Warn("remind", "status", "error", "error", err)
 	}
+}
+
+// earlyWarningEnded replaces a heads-up once the distros have spoken: ✅
+// when no server is affected; when one is, the confirmed alert takes over.
+func (d *Daemon) earlyWarningEnded(key string, first *findings.Finding, resolved []*findings.Finding) {
+	confirmed, notAffected := false, false
+	for _, f := range resolved {
+		if groupKey(f) == key {
+			confirmed = confirmed || f.Resolution == findings.ResolutionConfirmed
+			notAffected = notAffected || f.Resolution == findings.ResolutionNotAffected
+		}
+	}
+	if notAffected && !confirmed {
+		_ = d.notifier.Show(notify.Notification{ID: key, Title: "✅ " + first.CVE + " · not affected", Body: "Your distro assessed it: your servers aren't affected."})
+		return
+	}
+	_ = d.notifier.Remove(key) // confirmed (its own alert follows) or expired
 }
 
 // remind shows what is due: urgent and high findings (grouped per CVE, or
@@ -152,8 +174,19 @@ func (d *Daemon) groupNotification(key string, group []*findings.Finding, fixed 
 		return n
 	}
 	n.Title = icons[top] + " " + title(group[0])
+	if group[0].Kind == findings.KindEarlyWarning { // no fix yet, so no buttons
+		n.Title, n.Urgent = "🟡 Heads-up · "+title(group[0]), false
+	}
 	if kev {
 		n.Title += " · actively exploited"
+	}
+	if group[0].Kind == findings.KindEarlyWarning {
+		n.Body = "Not confirmed by your distro yet · may affect " + plural(len(servers), "server")
+		if score := slices.MaxFunc(group, func(a, b *findings.Finding) int { return cmp.Compare(a.Score, b.Score) }).Score; score > 0 {
+			n.Body += fmt.Sprintf(" · CVSS %.1f", score)
+		}
+		n.Body += " · no fix yet. Click for details."
+		return n
 	}
 	if group[0].Kind != findings.KindVulnerability {
 		n.Body = group[0].Summary
@@ -206,10 +239,14 @@ func title(f *findings.Finding) string {
 	return f.CVE + " · " + f.Source
 }
 
-// groupKey: one notification per CVE, or per server for restarts and end of support.
+// groupKey: one notification per CVE (early warnings separately), or per
+// server for restarts and end of support.
 func groupKey(f *findings.Finding) string {
-	if f.Kind == findings.KindVulnerability {
+	switch f.Kind {
+	case findings.KindVulnerability:
 		return "cve:" + f.CVE
+	case findings.KindEarlyWarning:
+		return string(f.Kind) + ":" + f.CVE
 	}
 	return string(f.Kind) + ":" + f.Server
 }

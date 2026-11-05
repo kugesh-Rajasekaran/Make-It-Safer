@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -274,5 +275,80 @@ func TestFixButton(t *testing.T) {
 	}
 	if n.ID != "cve:CVE-2024-6387" || strings.Join(labels, "|") != "db|web ✓|All servers…" || n.Sound {
 		t.Fatalf("re-shown notification = %+v", n)
+	}
+}
+
+func TestEarlyWarningNotifications(t *testing.T) {
+	paths := newInstall(t)
+	cfg, _ := config.Load(paths.Config)
+	cfg.Terminal = config.Terminal{App: "custom", Command: "true {script}"}
+	if err := cfg.Save(paths.Config); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	var raised []*findings.Finding
+	_ = findings.Update(paths, func(st *findings.Store) error {
+		for _, s := range []string{"web", "db"} {
+			raised = append(raised, &findings.Finding{ID: findings.MakeID(s, findings.KindEarlyWarning, "CVE-2026-0001/openssh"), Server: s,
+				Kind: findings.KindEarlyWarning, CVE: "CVE-2026-0001", Source: "openssh", Score: 9.8, Priority: findings.High})
+		}
+		st.Add(raised, now)
+		return nil
+	})
+	rec := newRecorder()
+	d := New(paths, "test", slog.New(slog.NewTextHandler(io.Discard, nil)), rec)
+	d.sched = newScheduler(nil, filepath.Join(paths.State, "schedule.json"), time.Now, d.unlocked, d.log)
+
+	// Shown once, as a heads-up without buttons, and not reminded.
+	d.alert(&engine.Result{})
+	d.alert(&engine.Result{})
+	rec.mu.Lock()
+	shown := slices.Clone(rec.shown)
+	rec.mu.Unlock()
+	if len(shown) != 1 {
+		t.Fatalf("shown %d times: %+v", len(shown), shown)
+	}
+	n := shown[0]
+	if n.ID != "early-warning:CVE-2026-0001" || n.Title != "🟡 Heads-up · CVE-2026-0001 · openssh" || len(n.Buttons) != 0 || n.Urgent ||
+		!strings.Contains(n.Body, "may affect 2 servers · CVSS 9.8") {
+		t.Fatalf("heads-up = %+v", n)
+	}
+
+	// The distro: db not affected, web not affected either → ✅.
+	var resolved []*findings.Finding
+	_ = findings.Update(paths, func(st *findings.Store) error {
+		for _, f := range st.Findings {
+			_ = f.Transition(findings.StateResolved, now)
+			f.Resolution = findings.ResolutionNotAffected
+			resolved = append(resolved, f)
+		}
+		return nil
+	})
+	d.alert(&engine.Result{Changes: findings.Changes{Resolved: resolved}})
+	rec.mu.Lock()
+	last := rec.shown[len(rec.shown)-1]
+	rec.mu.Unlock()
+	if last.ID != "early-warning:CVE-2026-0001" || last.Title != "✅ CVE-2026-0001 · not affected" {
+		t.Fatalf("after the distro said not affected: %+v", last)
+	}
+
+	// Confirmed instead: the heads-up is removed (the real alert follows).
+	resolved[0].Resolution = findings.ResolutionConfirmed
+	d.alert(&engine.Result{Changes: findings.Changes{Resolved: resolved}})
+	rec.mu.Lock()
+	removed := slices.Clone(rec.removed)
+	rec.mu.Unlock()
+	if !slices.Contains(removed, "early-warning:CVE-2026-0001") {
+		t.Fatalf("removed = %v", removed)
+	}
+
+	// A click opens mis show.
+	d.onClick(notify.Event{NotificationID: "early-warning:CVE-2026-0001", Action: notify.Default})
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+	for _, n := range rec.shown {
+		if n.ID == "error" {
+			t.Fatalf("click failed: %+v", n)
+		}
 	}
 }
