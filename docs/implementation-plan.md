@@ -90,7 +90,7 @@ For every server you own, always know which vulnerabilities affect it, and be on
 | # | Milestone | Size | After it, you can… | Status |
 |---|---|---|---|---|
 | M0 | Foundations | S | run `mis version` on Mac and Linux | ✅ Done |
-| M1 | Passphrase and key | M | create your passphrase and encrypted key | ⬜ |
+| M1 | Passphrase and key | M | create your passphrase and encrypted key | ✅ Done |
 | M2 | Read-only server access | M | set up a server and prove it's read-only | ⬜ |
 | M3 | Vulnerability checks | L | run `mis check` and see what's vulnerable where | ⬜ |
 | M4 | Background service | M | reboot, unlock once, and checks run by themselves | ⬜ |
