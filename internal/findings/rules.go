@@ -13,7 +13,8 @@ const rebootGrace = 3 * 24 * time.Hour
 // Classify decides a finding's priority from the rules (docs/design.md §4.4):
 //
 //	urgent: actively exploited, or severity ≥ 9 with a fix, or OS out of support
-//	high:   severity ≥ min_severity, or EPSS ≥ min_epss, or a reboot pending > 3 days
+//	high:   severity ≥ min_severity, or EPSS ≥ min_epss, or a reboot pending > 3 days,
+//	        or an early warning (shown once, never reminded: see ReminderDue)
 //	normal: other vulnerabilities with a fix
 //	silent: no fix and not urgent (unless rules.unfixed is "all"), or ignored
 //
@@ -31,7 +32,7 @@ func Classify(f *Finding, r config.Rules, now time.Time) Priority {
 		}
 		return Normal
 	case KindEarlyWarning:
-		return Urgent
+		return High
 	}
 
 	score := f.Score
@@ -79,6 +80,9 @@ func ReminderDue(f *Finding, r config.Rules, now time.Time) bool {
 	}
 	if f.NotifiedAt.IsZero() {
 		return true
+	}
+	if f.Kind == KindEarlyWarning {
+		return false // nothing to do until the distro confirms it; that alert follows
 	}
 	every := time.Duration(r.Remind.Normal)
 	switch f.Priority {

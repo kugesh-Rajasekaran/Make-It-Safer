@@ -127,6 +127,21 @@ func (s *Store) Merge(server string, current []*Finding, kinds []Kind, now time.
 	return ch
 }
 
+// Add records findings that aren't known yet, without resolving or
+// changing others (early warnings). It returns the ones it added.
+func (s *Store) Add(fs []*Finding, now time.Time) []*Finding {
+	var added []*Finding
+	for _, f := range fs {
+		if s.Find(f.ID) != nil {
+			continue
+		}
+		f.State, f.FirstSeen, f.LastSeen = StateNew, now, now
+		s.Findings = append(s.Findings, f)
+		added = append(added, f)
+	}
+	return added
+}
+
 // Forget drops everything about a server.
 func (s *Store) Forget(server string) {
 	s.Findings = slices.DeleteFunc(s.Findings, func(f *Finding) bool { return f.Server == server })

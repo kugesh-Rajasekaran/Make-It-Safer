@@ -145,3 +145,40 @@ func TestUpdatePersistsAndPrunes(t *testing.T) {
 		t.Fatal("old resolved findings should be pruned")
 	}
 }
+
+func TestEarlyWarningFindings(t *testing.T) {
+	now := time.Date(2026, 11, 5, 9, 0, 0, 0, time.UTC)
+	rules := config.Default().Rules
+	f := &Finding{ID: "web/early-warning/CVE-2026-0001/openssh", Server: "web", Kind: KindEarlyWarning, CVE: "CVE-2026-0001", Source: "openssh", Score: 9.8}
+	if p := Classify(f, rules, now); p != High {
+		t.Errorf("priority = %s, want high", p)
+	}
+	f.Priority = High
+
+	st := &Store{Checked: map[string]time.Time{}, Notes: map[string]time.Time{}}
+	if added := st.Add([]*Finding{f}, now); len(added) != 1 || f.State != StateNew || !f.FirstSeen.Equal(now) {
+		t.Fatalf("Add = %v, %+v", added, f)
+	}
+	if added := st.Add([]*Finding{{ID: f.ID}}, now); len(added) != 0 || len(st.Findings) != 1 {
+		t.Fatal("Add added a known finding again")
+	}
+	if len(st.Checked) != 0 {
+		t.Fatal("Add marked the server checked")
+	}
+
+	// Shown once, then never reminded.
+	if !ReminderDue(f, rules, now) {
+		t.Fatal("not due before it was shown")
+	}
+	_ = f.Transition(StateNotified, now)
+	if ReminderDue(f, rules, now.Add(30*24*time.Hour)) {
+		t.Fatal("an early warning was reminded")
+	}
+
+	// Resolved with a reason; reopening clears it.
+	_ = f.Transition(StateResolved, now)
+	f.Resolution = ResolutionNotAffected
+	if err := f.Transition(StateNew, now); err != nil || f.Resolution != "" {
+		t.Fatalf("reopened: %+v, %v", f, err)
+	}
+}

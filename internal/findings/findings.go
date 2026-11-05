@@ -15,9 +15,16 @@ type Kind string
 // Finding kinds.
 const (
 	KindVulnerability Kind = "vulnerability"
-	KindReboot        Kind = "reboot"      // a patched kernel is installed but not running
-	KindEndOfLife     Kind = "end-of-life" // the OS release no longer gets (free) security fixes
-	KindEarlyWarning  Kind = "early-warning"
+	KindReboot        Kind = "reboot"        // a patched kernel is installed but not running
+	KindEndOfLife     Kind = "end-of-life"   // the OS release no longer gets (free) security fixes
+	KindEarlyWarning  Kind = "early-warning" // unconfirmed: from the CVE List, before the distro assessed it
+)
+
+// How an early warning ended (Finding.Resolution).
+const (
+	ResolutionConfirmed   = "confirmed"    // the distro data confirmed it: a vulnerability finding took over
+	ResolutionNotAffected = "not affected" // the distro assessed it and this server isn't affected
+	ResolutionExpired     = "expired"      // no distro data after 30 days
 )
 
 // Priority decides whether and how often you're reminded.
@@ -97,6 +104,7 @@ type Finding struct {
 	ResolvedAt     time.Time `json:"resolved_at,omitzero"`
 	SnoozedUntil   time.Time `json:"snoozed_until,omitzero"`
 	AckReason      string    `json:"ack_reason,omitempty"`
+	Resolution     string    `json:"resolution,omitempty"` // early warnings: how they ended
 }
 
 // MakeID builds a finding's stable ID.
@@ -126,7 +134,7 @@ func (f *Finding) Transition(to State, now time.Time) error {
 	case StateResolved:
 		f.ResolvedAt = now
 	case StateNew:
-		f.ResolvedAt, f.NotifiedAt, f.SnoozedUntil, f.AckReason = time.Time{}, time.Time{}, time.Time{}, ""
+		f.ResolvedAt, f.NotifiedAt, f.SnoozedUntil, f.AckReason, f.Resolution = time.Time{}, time.Time{}, time.Time{}, "", ""
 	}
 	return nil
 }
