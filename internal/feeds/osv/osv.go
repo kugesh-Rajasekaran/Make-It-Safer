@@ -6,6 +6,7 @@ package osv
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -268,6 +269,29 @@ func Ecosystems(osID, version string) []string {
 func isLTS(version string) bool {
 	year, month, ok := strings.Cut(version, ".")
 	return ok && month == "04" && len(year) == 2 && (year[1]-'0')%2 == 0
+}
+
+// DistroID is the ID of a distro's own record for a CVE, e.g.
+// UBUNTU-CVE-2024-6387. It's "" for other operating systems.
+func DistroID(osID, cve string) string {
+	switch osID {
+	case "ubuntu", "debian":
+		return strings.ToUpper(osID) + "-" + cve
+	}
+	return ""
+}
+
+// Exists reports whether OSV has a record, e.g. whether a distro has
+// assessed a CVE yet (DistroID).
+func (c *Client) Exists(ctx context.Context, id string) (bool, error) {
+	_, err := c.Vuln(ctx, Ref{ID: id})
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, feeds.ErrNotFound):
+		return false, nil
+	}
+	return false, err
 }
 
 // Relevant reports whether a matched record is a per-CVE distro record.

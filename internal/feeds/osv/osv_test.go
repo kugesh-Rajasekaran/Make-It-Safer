@@ -194,6 +194,34 @@ func TestVulnCache(t *testing.T) {
 	}
 }
 
+func TestExists(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/vulns/UBUNTU-CVE-2024-6387":
+			_, _ = w.Write([]byte(ubuntuRecord))
+		case "/v1/vulns/DEBIAN-CVE-2024-6387":
+			http.Error(w, "down", http.StatusBadRequest)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	c := &Client{Feeds: feeds.NewForTest(srv.URL), API: srv.URL, Cache: filepath.Join(t.TempDir(), "osv")}
+	ctx := context.Background()
+	if ok, err := c.Exists(ctx, DistroID("ubuntu", "CVE-2024-6387")); !ok || err != nil {
+		t.Errorf("assessed record: %v, %v", ok, err)
+	}
+	if ok, err := c.Exists(ctx, DistroID("ubuntu", "CVE-2026-0001")); ok || err != nil {
+		t.Errorf("not assessed yet: %v, %v", ok, err)
+	}
+	if _, err := c.Exists(ctx, DistroID("debian", "CVE-2024-6387")); err == nil {
+		t.Error("an OSV error counts as an answer")
+	}
+	if DistroID("fedora", "CVE-2024-6387") != "" || DistroID("debian", "CVE-2024-6387") != "DEBIAN-CVE-2024-6387" {
+		t.Error("DistroID")
+	}
+}
+
 // FuzzVersions checks that version comparison never panics and is
 // antisymmetric, whatever a feed or server sends.
 func FuzzVersions(f *testing.F) {
