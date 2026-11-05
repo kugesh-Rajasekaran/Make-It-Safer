@@ -101,16 +101,17 @@ mis-collect 1
 os-id=ubuntu
 os-version=24.04
 kernel=6.8.0-49-generic
+arch=amd64
 reboot-required=no
 groups=mis
 pkg	libssl3t64:amd64	3.0.13-0ubuntu3.16	openssl	3.0.13-0ubuntu3.16
 pkg	openssh-server	1:9.6p1-3ubuntu13.5	openssh	1:9.6p1-3ubuntu13.5
 …
 ```
-Commands used: `cat /etc/os-release`, `uname -r`, `test -f /var/run/reboot-required`, `id -Gn`, `dpkg-query -W -f=…`. None of them need root.
+Commands used: `sed` on `/etc/os-release`, `uname -r`, `dpkg --print-architecture`, `test -e /var/run/reboot-required`, `id -Gn`, `dpkg-query -W -f=…`. None of them need root.
 
 **`mis server verify`** proves the restrictions from your computer. Each of these must be *refused* for `mis` (otherwise verify reports an error):
-- running any other command: `ssh mis@host id` returns collector output, not the result of `id`
+- running any other command: asking for `id; touch /tmp/mis-was-here` returns collector output, and the file is never created
 - opening a terminal (PTY)
 - port forwarding (`-L`/`-R`)
 - password login

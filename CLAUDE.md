@@ -85,6 +85,7 @@ internal/fixcmd/         update command builder (the ONLY place commands are bui
 internal/notify/         notifier interface, linux (D-Bus), darwin (helper IPC)
 internal/termlaunch/     terminal launcher, prefill snippet
 internal/setup/          server setup/teardown scripts, verify checks
+internal/testenv/        throwaway Docker SSH servers for integration tests
 internal/config/         schema, defaults, paths, permission checks
 server/                  collect.sh, setup/teardown templates (embedded)
 macos/Notifier/          Swift helper app

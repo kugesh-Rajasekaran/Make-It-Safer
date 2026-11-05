@@ -22,5 +22,6 @@ Needs Go (the version in `go.mod`) and `golangci-lint` v2.
 make build        # builds bin/mis
 make check        # format check, lint, unit tests
 make test-integration   # Docker: throwaway Ubuntu/Debian SSH servers
+                        # (MIS_TEST_IMAGES=ubuntu:24.04 runs a subset)
 git config core.hooksPath .githooks   # run `make check` before each commit
 ```
