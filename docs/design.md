@@ -191,6 +191,10 @@ The key is then pinned. A mismatch later blocks the connection and triggers an u
 | Debian 12 | `Debian:12` |
 
 Query by **source package name and version** (e.g. `openssh`), because that is how distros file vulnerabilities.
+- Only the per-CVE distro records (`UBUNTU-CVE-…`, `DEBIAN-CVE-…`) are used; advisories (USN, DSA, DLA) repeat the same CVEs.
+- A fix found only in the `Ubuntu:Pro:…` ecosystem, or marked "Available with Ubuntu Pro", is flagged as needing Ubuntu Pro.
+- Records are cached without their long lists of affected versions (OSV already did the matching), keyed by their `modified` time.
+- Spike S1 was done offline against real records from OSV's public data bucket, because the OSV API isn't reachable from the build sandbox. Your first `mis check` is the live confirmation.
 
 **Findings:** one finding is (server, vulnerability, source package).
 ```
@@ -210,7 +214,7 @@ new ──► notified ──► (snoozed / accepted) ──► resolved ✅
 | 🟡 Normal | Other vulnerabilities with a fix available | Weekly summary |
 | ⚪ Silent | No fix yet and not urgent; listed in `mis findings` only | none |
 
-Severity comes from the distro record first (Ubuntu priority / Debian urgency + CVSS), then the CVE record.
+Severity is the highest CVSS base score in the CVE record (from the CNA or CISA). When there is none, the distro's own rating (Ubuntu priority, Debian urgency) stands in. Scores and EPSS are only fetched for findings that can alert (those with a fix, unless `unfixed: all`).
 
 **Rules config (`config.yaml`):**
 ```yaml

@@ -81,6 +81,7 @@ internal/inventory/      collector output parser + validation
 internal/feeds/{osv,kev,epss,cvelist,eol}/
 internal/match/          early-warning name matcher
 internal/findings/       state machine, priorities, reminders, storage
+internal/engine/         a check: refresh package lists, match them, record findings
 internal/fixcmd/         update command builder (the ONLY place commands are built)
 internal/notify/         notifier interface, linux (D-Bus), darwin (helper IPC)
 internal/termlaunch/     terminal launcher, prefill snippet
