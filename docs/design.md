@@ -147,6 +147,8 @@ The key is then pinned. A mismatch later blocks the connection and triggers an u
 - Core dumps disabled (`RLIMIT_CORE=0`).
 - Linux: `PR_SET_DUMPABLE=0` blocks same-user debuggers. macOS: `PT_DENY_ATTACH`.
 - Unlock attempts are rate-limited, with exponential delay.
+- Signing uses a short-lived copy of the key, wiped right after: Go's Ed25519 code can't sign from memory outside the Go heap.
+- Passphrases are typed in raw terminal mode into one pre-sized buffer, so typing leaves no stray copies.
 
 **Passphrase rules:** see §5.2.
 
@@ -358,16 +360,15 @@ The baseline is **NIST SP 800-63B-4** (final, August 2025), §3.1.1.2 *Password 
 | Permit a maximum of at least 64 (SHOULD) | Up to 1024 characters |
 | Accept printable ASCII, space and Unicode (SHOULD); NFC normalization | All accepted. NFC-normalized before key derivation. |
 | **No composition rules** (SHALL NOT) | No "must contain a symbol/number" rules |
-| **Blocklist** of common, expected and breached passwords, dictionary words and context words. Reject with a reason. (SHALL) | Bundled offline blocklist (common and breached passwords, dictionary words), plus context words: `make-it-safer`, `mis`, your username, hostname and server names. The reason is shown. |
+| **Blocklist** of common, expected and breached passwords, dictionary words and context words. Reject with a reason. (SHALL) | The zxcvbn estimator's bundled lists (common and breached passwords, English words, names), plus context words: `make-it-safer`, `mis`, your username, hostname and server names. The reason is shown. |
 | **No periodic change**; change only on compromise (SHALL NOT / SHALL) | No expiry. `mis passphrase change` when needed. |
 | **No hints** (SHALL NOT) | None stored |
 | Full password verified, no truncation (SHALL) | Whole passphrase goes into Argon2id |
-| Offer guidance (SHALL); allow paste and password managers (SHALL/SHOULD) | Live strength meter + tips. Paste allowed. Offers a generated 6-word passphrase (EFF wordlist, ≈ 77 bits). |
+| Offer guidance (SHALL); allow paste and password managers (SHALL/SHOULD) | A plain-language reason for every rejection. Paste allowed. Offers a generated 6-word passphrase (EFF wordlist, ≈ 77 bits). |
 
 **Stricter than NIST, on purpose.** NIST assumes the server limits guessing attempts. A stolen `key.enc` can be guessed **offline** without any limit, so we add:
 - **Strength floor:** estimated at least 10¹⁴ guesses (≈ 47 bits) by a zxcvbn estimator. Weaker phrases are rejected with a reason.
 - **Slow derivation:** Argon2id at RFC 9106 parameters (§4.2), so each guess costs about 1 s and up to 2 GiB of memory.
-- **Optional online breach check:** Have I Been Pwned "range" API. Only the first 5 characters of a SHA-1 hash are sent. Off by default; asked during setup.
 
 ---
 
@@ -413,4 +414,5 @@ The package layout is in `CLAUDE.md` (Layout).
 - Other alert channels (Telegram, email, ntfy)
 - Password login for the `mis` user (fallback where keys are impossible)
 - Public release: Homebrew tap, signed release builds, Apple Developer ID signing and notarization
+- Optional online breach check for new passphrases (Have I Been Pwned range API)
 - Quiet hours, multiple users or teams

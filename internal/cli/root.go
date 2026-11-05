@@ -11,6 +11,7 @@ import (
 	"os"
 	"slices"
 
+	"github.com/awnumar/memguard"
 	"github.com/spf13/cobra"
 
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/apperr"
@@ -27,7 +28,10 @@ type app struct {
 }
 
 // Execute runs mis with the process arguments and returns the exit code.
+// Locked memory holding secrets is wiped on exit and on Ctrl-C.
 func Execute() int {
+	memguard.CatchInterrupt()
+	defer memguard.Purge()
 	return run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)
 }
 
@@ -74,7 +78,7 @@ fix command already typed in.`,
 		return apperr.Wrap(apperr.CLIUsage, err, "invalid flag")
 	})
 
-	root.AddCommand(a.versionCmd())
+	root.AddCommand(a.versionCmd(), a.initCmd(), a.passphraseCmd())
 	return root
 }
 

@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 )
@@ -68,5 +69,30 @@ func TestCleanDropsControlCharacters(t *testing.T) {
 	in := "safe\x1b]52;c;evil\x07 text\r\nnext\tline\u0085"
 	if got, want := clean(in), "safe]52;c;evil text\nnext\tline"; got != want {
 		t.Fatalf("clean() = %q, want %q", got, want)
+	}
+}
+
+func TestInitRequiresTerminal(t *testing.T) {
+	t.Setenv("MIS_HOME", t.TempDir()+"/mis")
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer w.Close()
+	var out, errOut bytes.Buffer
+	code := run([]string{"init", "--json"}, r, &out, &errOut)
+	e := decode(t, out.String())
+	if code != 1 || e.Error == nil || e.Error.Code != "VAULT_TTY_REQUIRED" {
+		t.Fatalf("exit %d, envelope %s", code, out.String())
+	}
+}
+
+func TestCommandsNeedInit(t *testing.T) {
+	t.Setenv("MIS_HOME", t.TempDir()+"/mis")
+	code, out, _ := runCLI(t, "passphrase", "change", "--json")
+	e := decode(t, out)
+	if code != 1 || e.Error == nil || e.Error.Code != "CONFIG_NOT_INITIALIZED" {
+		t.Fatalf("exit %d, envelope %s", code, out)
 	}
 }

@@ -44,6 +44,16 @@ func CodeOf(err error) string {
 	return CLIUnexpected
 }
 
+// MessageOf returns the message of the first *Error in err's chain, without
+// the underlying cause; plain errors return their full text.
+func MessageOf(err error) string {
+	var e *Error
+	if errors.As(err, &e) {
+		return e.Message
+	}
+	return err.Error()
+}
+
 // Is reports whether err carries the given code.
 func Is(err error, code string) bool {
 	var e *Error
