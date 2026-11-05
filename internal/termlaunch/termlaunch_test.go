@@ -129,3 +129,31 @@ func TestOpenWritesPrivateScript(t *testing.T) {
 		t.Fatalf("script:\n%s", data)
 	}
 }
+
+func TestAvailable(t *testing.T) {
+	look := func(name string) (string, error) {
+		if name == "kitty" || name == "foot" {
+			return "/usr/bin/" + name, nil
+		}
+		return "", errors.New("not found")
+	}
+	for _, tc := range []struct {
+		goos string
+		term config.Terminal
+		ok   bool
+	}{
+		{"linux", config.Terminal{App: "default"}, true}, // kitty is in the default chain
+		{"linux", config.Terminal{App: "kitty"}, true},
+		{"linux", config.Terminal{App: "konsole"}, false},
+		{"linux", config.Terminal{App: "custom", Command: "foot {script}"}, true},
+		{"linux", config.Terminal{App: "custom", Command: "nope {script}"}, false},
+		{"darwin", config.Terminal{App: "default"}, true},
+		{"darwin", config.Terminal{App: "iterm2"}, false}, // no iTerm.app on this machine
+		{"darwin", config.Terminal{App: "konsole"}, false},
+	} {
+		err := Launcher{Terminal: tc.term, GOOS: tc.goos, LookPath: look}.Available()
+		if (err == nil) != tc.ok {
+			t.Errorf("%s %+v: %v, want ok=%v", tc.goos, tc.term, err, tc.ok)
+		}
+	}
+}

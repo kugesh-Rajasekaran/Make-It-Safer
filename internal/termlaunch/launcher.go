@@ -1,6 +1,7 @@
 package termlaunch
 
 import (
+	"cmp"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -147,6 +148,39 @@ func (l Launcher) linuxArgv(app, path string) (string, []string, error) {
 		}
 	}
 	return "", nil, apperr.New(apperr.TerminalNotFound, "terminal "+app+" isn't available on Linux; set terminal.app in config.yaml")
+}
+
+// macApps are the app bundles of the macOS terminals (Terminal ships with macOS).
+var macApps = map[string]string{"iterm2": "iTerm.app", "ghostty": "Ghostty.app", "kitty": "kitty.app", "alacritty": "Alacritty.app", "wezterm": "WezTerm.app"}
+
+// Available reports whether the configured terminal can be opened here.
+func (l Launcher) Available() error {
+	name, _, err := l.argv(filepath.Join(os.TempDir(), "mis-check.command"))
+	if err != nil {
+		return err
+	}
+	look := l.LookPath
+	if look == nil {
+		look = exec.LookPath
+	}
+	goos := cmp.Or(l.GOOS, runtime.GOOS)
+	if goos == "darwin" && l.Terminal.App != "custom" {
+		bundle, ok := macApps[l.Terminal.App]
+		if !ok {
+			return nil // Terminal
+		}
+		home, _ := os.UserHomeDir()
+		for _, dir := range []string{"/Applications", filepath.Join(home, "Applications")} {
+			if _, err := os.Stat(filepath.Join(dir, bundle)); err == nil {
+				return nil
+			}
+		}
+		return apperr.New(apperr.TerminalNotFound, bundle+" isn't installed in /Applications or ~/Applications")
+	}
+	if _, err := look(name); err != nil {
+		return apperr.New(apperr.TerminalNotFound, name+" isn't installed (not found in PATH)")
+	}
+	return nil
 }
 
 // removeStale deletes launcher scripts left behind (e.g. a terminal that
