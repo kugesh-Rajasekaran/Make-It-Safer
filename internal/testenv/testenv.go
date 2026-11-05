@@ -10,6 +10,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -38,7 +39,7 @@ var Images = func() []string {
 const dockerfile = `ARG BASE
 FROM ${BASE}
 RUN apt-get update -qq \
- && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends openssh-server sudo >/dev/null \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends openssh-server sudo apt-utils >/dev/null \
  && rm -rf /var/lib/apt/lists/* \
  && mkdir -p /run/sshd \
  && useradd -m -s /bin/bash admin \
@@ -150,6 +151,74 @@ func (s *Server) AdminRun(cmd string) (string, error) {
 	out, err := session.CombinedOutput(cmd)
 	return string(out), err
 }
+
+// Terminal is an interactive SSH session with a terminal, logged in as the
+// admin user, like the window a fix button opens.
+type Terminal struct {
+	session *ssh.Session
+	client  *ssh.Client
+	stdin   io.WriteCloser
+	mu      sync.Mutex
+	out     bytes.Buffer
+}
+
+// AdminTerminal runs command over SSH as admin, with a terminal attached.
+func (s *Server) AdminTerminal(t *testing.T, command string) *Terminal {
+	t.Helper()
+	s.WaitReady()
+	client, err := ssh.Dial("tcp", s.Target.Addr(), &ssh.ClientConfig{
+		User: "admin", Auth: []ssh.AuthMethod{ssh.PublicKeys(s.Admin)},
+		HostKeyCallback: ssh.FixedHostKey(s.HostKey), HostKeyAlgorithms: []string{ssh.KeyAlgoED25519}, Timeout: 15 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := client.NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.RequestPty("xterm", 40, 200, ssh.TerminalModes{ssh.ECHO: 1}); err != nil {
+		t.Fatal(err)
+	}
+	term := &Terminal{session: session, client: client}
+	if term.stdin, err = session.StdinPipe(); err != nil {
+		t.Fatal(err)
+	}
+	session.Stdout, session.Stderr = term, term
+	if err := session.Start(command); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = session.Close(); _ = client.Close() })
+	return term
+}
+
+func (tm *Terminal) Write(p []byte) (int, error) {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	return tm.out.Write(p)
+}
+
+// Output returns everything shown so far.
+func (tm *Terminal) Output() string {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	return tm.out.String()
+}
+
+// WaitFor waits until text appears on the terminal.
+func (tm *Terminal) WaitFor(t *testing.T, text string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for !strings.Contains(tm.Output(), text) {
+		if time.Now().After(deadline) {
+			t.Fatalf("waited for %q; the terminal shows:\n%s", text, tm.Output())
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// Type sends keystrokes.
+func (tm *Terminal) Type(s string) { _, _ = tm.stdin.Write([]byte(s)) }
 
 // Exec runs a command as root inside the container.
 func (s *Server) Exec(args ...string) (string, error) { return s.ExecInput("", args...) }
