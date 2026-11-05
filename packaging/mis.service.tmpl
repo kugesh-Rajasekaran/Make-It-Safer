@@ -1,0 +1,18 @@
+# Make-It-Safer background service. Installed by: mis service install
+# It runs inside your desktop session, so it can show notifications and
+# open terminals.
+[Unit]
+Description=Make-It-Safer: vulnerability checks for your servers
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart="{{.Binary}}" daemon
+Restart=on-failure
+RestartSec=10
+{{- if .Home}}
+Environment="MIS_HOME={{.Home}}"
+{{- end}}
+
+[Install]
+WantedBy=graphical-session.target
