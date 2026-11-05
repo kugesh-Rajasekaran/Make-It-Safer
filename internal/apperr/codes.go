@@ -16,4 +16,19 @@ const (
 	ConfigWriteFailed        = "CONFIG_WRITE_FAILED"
 	ConfigNotInitialized     = "CONFIG_NOT_INITIALIZED"
 	ConfigLockFailed         = "CONFIG_LOCK_FAILED"
+
+	// Vault: passphrase and key
+	VaultTTYRequired        = "VAULT_TTY_REQUIRED"
+	VaultPassphraseInvalid  = "VAULT_PASSPHRASE_INVALID"
+	VaultPassphraseTooShort = "VAULT_PASSPHRASE_TOO_SHORT"
+	VaultPassphraseTooLong  = "VAULT_PASSPHRASE_TOO_LONG"
+	VaultPassphraseTooWeak  = "VAULT_PASSPHRASE_TOO_WEAK"
+	VaultPassphraseMismatch = "VAULT_PASSPHRASE_MISMATCH"
+	VaultKeyExists          = "VAULT_KEY_EXISTS"
+	VaultKeyMissing         = "VAULT_KEY_MISSING"
+	VaultKeyFileInvalid     = "VAULT_KEY_FILE_INVALID"
+	VaultKeyCreateFailed    = "VAULT_KEY_CREATE_FAILED"
+	VaultUnlockFailed       = "VAULT_UNLOCK_FAILED"
+	VaultUnlockRateLimited  = "VAULT_UNLOCK_RATE_LIMITED"
+	VaultLocked             = "VAULT_LOCKED"
 )
