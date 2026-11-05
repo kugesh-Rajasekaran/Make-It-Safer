@@ -5,6 +5,7 @@ package engine
 import (
 	"context"
 	"log/slog"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -340,8 +341,8 @@ func vulnFindings(w *serverWork, refs [][]osv.Ref, vulns map[string]*osv.Vuln, c
 	for i, q := range w.queries {
 		for _, r := range refs[i] {
 			v := vulns[r.ID]
-			if v == nil || v.CVE() == "" {
-				continue
+			if v == nil || !cvePattern.MatchString(v.CVE()) {
+				continue // only well-formed CVE ids reach notifications and banners
 			}
 			fixed, proOnly := v.Fix(q.Ecosystem, q.Name, q.Version)
 			id := findings.MakeID(w.server.Name, findings.KindVulnerability, v.CVE()+"/"+q.Name)
@@ -366,6 +367,8 @@ func vulnFindings(w *serverWork, refs [][]osv.Ref, vulns map[string]*osv.Vuln, c
 	}
 	return out
 }
+
+var cvePattern = regexp.MustCompile(`^CVE-[0-9]{4}-[0-9]{4,}$`)
 
 func shorten(s string, n int) string {
 	s = strings.Join(strings.Fields(s), " ")
