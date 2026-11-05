@@ -31,7 +31,7 @@ What the Collector prints, saved on Your computer: OS release, running kernel, r
 _Avoid_: snapshot, SBOM, package dump
 
 **Vulnerability**:
-A security flaw as published by a Source, identified by a CVE ID or a distro ID (e.g. `UBUNTU-CVE-…`, `ALSA-…`).
+A security flaw as published by a Source, identified by a CVE ID or a distro ID (e.g. `UBUNTU-CVE-…`, `DEBIAN-CVE-…`).
 _Avoid_: bug, issue
 
 **Finding**:

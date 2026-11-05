@@ -9,12 +9,13 @@ Standards are adapted from the DineSynk repo (working style, engineering princip
 **Make-It-Safer (`mis`)** is a command-line tool and background service. It tracks vulnerabilities across a user's VPS servers (OVH and other providers) and works out which servers are affected. It then sends desktop notifications that open an SSH session with the fix command already typed in.
 
 - **Language:** Go (single binary), plus a small Swift helper app for macOS notifications
-- **Runs on:** the user's computer (macOS or Linux desktop)
-- **Servers supported:** Ubuntu, Debian, AlmaLinux, Rocky Linux
+- **Runs on:** the user's computer (macOS first, then Linux desktop)
+- **Servers supported (v1):** Ubuntu, Debian
+- **Audience (v1):** personal use, installed from source
 - **Vulnerability data:** OSV.dev (confirmed), CVE List (early warning), CISA KEV, EPSS, endoflife.date
 - **Status:** planning done. Implementation starts at milestone **M0**. There is no code yet.
 
-**Source of truth:** `docs/implementation-plan.md` (architecture, decisions, milestones M0–M6). Domain vocabulary is in `CONTEXT.md`.
+**Source of truth:** `docs/design.md` (how it works, decisions) and `docs/implementation-plan.md` (milestones M0–M7, tasks). Domain vocabulary is in `CONTEXT.md`.
 
 ## How to Work
 
@@ -23,7 +24,7 @@ Standards are adapted from the DineSynk repo (working style, engineering princip
 3. **Simple > clever.** No premature abstractions, no over-engineering.
 4. **Follow existing patterns** in this repo before inventing new ones.
 5. **Be concise and direct.** Flag risks and trade-offs proactively.
-6. **Work milestone by milestone** from the plan. If something has to differ from the plan, say so and update the plan in the same change.
+6. **Work milestone by milestone** from the plan. If something has to differ from the plan or design, say so and update that doc in the same change.
 7. **Docs** are simple, crisp and scannable.
 
 ## Running Code
@@ -50,9 +51,9 @@ Standards are adapted from the DineSynk repo (working style, engineering princip
 7. **Treat Collector output as hostile:** size limits, strict parsing, validation and fuzz tests.
 8. **No custom crypto.**
    - Use only `golang.org/x/crypto` primitives, with the parameters from the plan: Argon2id (RFC 9106), XChaCha20-Poly1305, Ed25519.
-   - Never weaken the passphrase policy (NIST SP 800-63B-4 plus plan §5.2).
+   - Never weaken the passphrase policy (NIST SP 800-63B-4 plus design §5.2).
 9. **Files:** the config directory is 0700 and files are 0600. Refuse to run if permissions are looser. No cloud sync, no telemetry.
-10. **Network allowlist:** connect only to the destinations in plan §4.9. Adding one requires updating the plan.
+10. **Network allowlist:** connect only to the destinations in design §4.9. Adding one requires updating the design.
 
 ## Code Standards (Go)
 
@@ -85,7 +86,7 @@ internal/setup/          server setup/teardown scripts, verify checks
 internal/config/         schema, defaults, paths, permission checks
 server/                  collect.sh, setup/teardown templates (embedded)
 macos/Notifier/          Swift helper app
-packaging/               launchd plist, systemd unit, release config
+packaging/               launchd plist, systemd unit
 ```
 
 ### Errors and Output
@@ -119,7 +120,7 @@ packaging/               launchd plist, systemd unit, release config
 ```bash
 make build             # go build ./cmd/mis
 make test              # go test ./...
-make test-integration  # Docker matrix: Ubuntu, Debian, AlmaLinux, Rocky
+make test-integration  # Docker matrix: Ubuntu 22.04/24.04, Debian 12/13
 make lint              # golangci-lint (gofmt, goimports, govet, staticcheck, errcheck, gosec)
 make fmt               # gofmt + goimports
 make check             # fmt check + lint + test
@@ -138,7 +139,8 @@ make check             # fmt check + lint + test
 
 ## Docs and Decisions
 
-- `docs/implementation-plan.md`: plan and milestones.
+- `docs/design.md`: how it works, decisions, security, risks.
+- `docs/implementation-plan.md`: milestones, tasks, spikes, acceptance checklist. Update the milestone status as work lands.
 - `CONTEXT.md`: glossary. Use its terms in code, docs and issues, and don't drift to the synonyms it lists under _Avoid_.
 - `docs/adr/NNNN-short-title.md`: one ADR (context, decision, consequences) per significant decision that changes or adds to the plan. If a change contradicts an ADR or the plan, say so explicitly.
 - `.claude/LEARNINGS.md`: append-only log of non-obvious discoveries (date, what, files). Create it on the first entry.
