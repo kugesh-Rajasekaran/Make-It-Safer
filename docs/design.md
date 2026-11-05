@@ -323,10 +323,11 @@ Package names must match `^[a-z0-9][a-z0-9+.-]{0,127}(:[a-z0-9-]{1,32})?$` and a
 ### 4.8 CLI
 
 ```
-mis init                         first-time setup wizard
+mis init                         setup wizard: passphrase → terminal → alerts → servers →
+                                 background service (unlocked) → test notification → first check
 mis server add|list|remove       manage servers
 mis server verify [name]         prove read-only restrictions
-mis server setup-script <name>   print setup script to run yourself
+mis server setup-script         print the setup script to run yourself
 mis unlock | mis lock            give / wipe the key (memory only)
 mis status                       locked?, last checks, open findings per server
 mis findings [--server X]        what is vulnerable where
@@ -338,7 +339,8 @@ mis ack CVE-… [--server X] [--until DATE] [--reason TEXT]
 mis passphrase change            re-encrypt key with a new passphrase
 mis notify test                  send a test notification with buttons
 mis service install|uninstall|status|logs
-mis doctor                       permissions, notifier, terminal, network, servers
+mis doctor                       files, sync, service, notifications, terminal, desktop session,
+                                 data sources, servers, data age; each problem with its fix
 ```
 
 ### 4.9 Files and network
@@ -370,11 +372,12 @@ There's no cloud sync and no telemetry. `mis doctor` warns if the directory sits
 | Laptop stolen while off | Only `key.enc` is on disk. Argon2id + strong passphrase. |
 | Laptop compromised while unlocked | The key only opens the `mis` user, which can only print package lists. Admin credentials are never held by `mis`. |
 | Key file copied | Same as above. Offline guessing is slowed by Argon2id and strict passphrase rules. |
-| Man-in-the-middle on SSH | Pinned host keys. A mismatch blocks the connection and raises an alert. |
+| Man-in-the-middle on SSH | Pinned host keys. A mismatch blocks the connection and raises an urgent notification. |
 | Compromised/malicious server | Collector output is treated as hostile: size limits, strict parsing, name validation, fuzz-tested parser. Nothing from it is executed. |
 | Poisoned or wrong feed data | Feed text never reaches commands. Worst case is a wrong alert, not code execution. Data comes over HTTPS. |
 | Another local user | 0700/0600 permissions, socket peer-UID check |
-| Fake button events | The daemon acts only on (server, CVE) pairs in its own state, with commands it built itself |
+| Fake button events | The daemon acts only on (server, CVE) pairs in its own state, with commands it built itself. Clicks come only from the macOS helper (same-user socket) or the D-Bus notification server (other senders are ignored). |
+| Secrets in logs | Passphrases and keys are never logged; a test scans a fully logged unlock/check/lock/wrong-passphrase run for them. |
 | Misconfigured sshd locks you out | `sshd -t` before reload, admin session kept open, automatic rollback |
 
 ### 5.2 Passphrase standard

@@ -13,7 +13,7 @@ Standards are adapted from the DineSynk repo (working style, engineering princip
 - **Servers supported (v1):** Ubuntu, Debian
 - **Audience (v1):** personal use, installed from source
 - **Vulnerability data:** OSV.dev (confirmed), CVE List (early warning), CISA KEV, EPSS, endoflife.date
-- **Status:** planning done. Implementation starts at milestone **M0**. There is no code yet.
+- **Status:** milestones M0–M7 built. What's left is checking on the user's own Mac, Linux desktop and servers (spikes S2, S3 and the acceptance checklist in the plan).
 
 **Source of truth:** `docs/design.md` (how it works, decisions) and `docs/implementation-plan.md` (milestones M0–M7, tasks). Domain vocabulary is in `CONTEXT.md`.
 
@@ -80,6 +80,7 @@ internal/sshx/           SSH client, host-key pinning, collector call
 internal/inventory/      collector output parser + validation
 internal/feeds/{osv,kev,epss,cvelist,eol}/
 internal/match/          early-warning name matcher
+internal/doctor/         mis doctor checks (each a function of plain inputs)
 internal/findings/       state machine, priorities, reminders, storage
 internal/engine/         a check: refresh package lists, match them, record findings
 internal/fixcmd/         update command builder (the ONLY place commands are built)

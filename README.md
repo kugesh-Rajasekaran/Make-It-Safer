@@ -6,10 +6,21 @@
 - Your passphrase is never stored; the login key is saved only encrypted.
 - Local: no accounts, no cloud sync, no telemetry.
 
-**Status:** under development. See the [implementation plan](docs/implementation-plan.md) for progress.
+**Status:** all milestones built (M0–M7). The last checks happen on your own Mac, Linux desktop and servers; see the [implementation plan](docs/implementation-plan.md).
+
+## Get started
+
+```bash
+make install   # mis into ~/.local/bin (and the notification helper on macOS)
+mis init       # guided setup: passphrase, terminal, alerts, servers, background service
+mis doctor     # checks everything
+```
+
+Everything else is in the [user guide](docs/user-guide.md).
 
 ## Docs
 
+- [User guide](docs/user-guide.md): install, daily use, fixing, troubleshooting
 - [Design](docs/design.md): how it works, security, decisions
 - [Implementation plan](docs/implementation-plan.md): milestones and tasks
 - [Glossary](CONTEXT.md)

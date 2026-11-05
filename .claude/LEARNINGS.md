@@ -46,3 +46,23 @@ Append-only log of non-obvious discoveries. Newest last.
 
 - **What:** On real data, exact name matching alone matched "Git for Windows" (vendor `git-for-windows`, product `git`) and Tanium's "Patch" module to Debian's `git` and `patch`. Bare names now only count with a known vendor, no vendor, or a vendor that names the product; other operating systems are skipped.
 - **Files:** `internal/match/match.go`, `internal/match/testdata/`
+
+## 2026-11-05 · Testing terminal prompts without a dependency
+
+- **What:** `/dev/ptmx` plus `unix.TIOCSPTLCK` / `unix.TIOCGPTN` (golang.org/x/sys) gives a pseudo-terminal in a few lines, so `mis init` runs end-to-end in `go test`, including the raw-mode passphrase prompt. Linux only (the test has a build tag).
+- **Files:** `internal/cli/init_test.go`
+
+## 2026-11-05 · One JSON envelope, even when a command fails with results
+
+- **What:** `mis doctor` and `mis server verify` have results *and* fail. Printing the data envelope and then the error envelope gave agents two JSON documents. `emitFailed` prints `{"ok": false, "error": …, "data": …}` once.
+- **Files:** `internal/cli/output.go`
+
+## 2026-11-05 · `systemctl --user enable --now` doesn't restart a running unit
+
+- **What:** After `make install` the old binary kept running. The service install now enables and then restarts the unit; launchd's bootout/bootstrap already did.
+- **Files:** `internal/daemon/service_linux.go`
+
+## 2026-11-05 · Threat-model review: host key mismatches must reach you
+
+- **What:** The background refresh only logged a host-key mismatch, so the promised alert never showed. It's now an urgent notification. Walk design §5.1 against the code when changing the refresh path.
+- **Files:** `internal/daemon/alerts.go` (`refreshFailed`)

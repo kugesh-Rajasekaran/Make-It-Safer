@@ -96,7 +96,7 @@ For every server you own, always know which vulnerabilities affect it, and be on
 | M4 | Background service | M | reboot, unlock once, and checks run by themselves | ✅ Done |
 | M5 | Notifications and fix flow (Mac first) | L | click a server button and get SSH with the fix typed in | ✅ Built · S2/S3 on your Mac and Linux desktop |
 | M6 | Early warning | S | get heads-ups for critical CVEs within ~15 min | ✅ Done |
-| M7 | Setup wizard and polish | M | set everything up with `mis init` alone | ⬜ |
+| M7 | Setup wizard and polish | M | set everything up with `mis init` alone | ✅ Built · your fresh-setup check pending |
 
 ### M0 · Foundations (S)
 Goal: an empty but solid project.
@@ -207,6 +207,12 @@ Built: the delta log is read by byte range (64 KB per run normally). Watched CVE
 | T-703 | `chore` `make install` / `make uninstall`: `mis`, ad-hoc-signed helper (Mac), service | Works on your Mac and on Linux |
 | T-704 | `docs` `docs/user-guide.md`: install, daily use, fixing, unlocking, removing a server, troubleshooting | You can follow it alone |
 | T-705 | `test` final review: threat model walk-through (design §5.1), full matrix, fuzz, log scan for secrets 🔒 | All green; anything found is fixed |
+
+Built and tested here:
+- **T-701:** the whole wizard runs end-to-end through a pseudo-terminal against a fake background service. The passphrase is never echoed, and the service is unlocked without asking twice.
+- **T-702:** a test per check.
+- **T-703:** works on Linux; the macOS part is yours.
+- **T-705:** every fuzz target ran for 30 s, and the Docker integration suite passes on Ubuntu (Debian runs in CI). The log scan is a test now. The threat-model walkthrough found one gap: a host-key mismatch during a background refresh was only logged. It now raises an urgent notification.
 
 **You check:** a fresh setup on your Mac using only the user guide.
 
