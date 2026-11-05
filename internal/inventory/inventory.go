@@ -81,6 +81,15 @@ func (inv *Inventory) Binaries(source string) []Package {
 	return out
 }
 
+// Kernel sources whose packages are not the kernel itself.
+var notKernel = map[string]bool{"linux-firmware": true, "linux-base": true, "linux-atm": true, "linux-sound-base": true}
+
+// IsKernelSource reports whether a source package builds the Linux kernel
+// (linux, linux-signed-amd64, linux-hwe-6.8, linux-aws, …).
+func IsKernelSource(source string) bool {
+	return source == "linux" || (strings.HasPrefix(source, "linux-") && !notKernel[source])
+}
+
 var (
 	osIDPattern      = regexp.MustCompile(`^[a-z0-9._-]{1,32}$`)
 	osVersionPattern = regexp.MustCompile(`^[0-9]{1,4}(\.[0-9]{1,4})?$`)

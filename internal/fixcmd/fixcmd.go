@@ -32,9 +32,6 @@ var (
 	versioned      = regexp.MustCompile(`[0-9]+\.[0-9]+`)
 )
 
-// Kernel sources whose packages are not the kernel itself.
-var notKernel = map[string]bool{"linux-firmware": true, "linux-base": true, "linux-atm": true, "linux-sound-base": true}
-
 // Kernel meta-packages and others that never pull in a new kernel.
 var notMeta = map[string]bool{
 	"linux-base": true, "linux-firmware": true, "linux-libc-dev": true, "linux-tools-common": true,
@@ -58,7 +55,7 @@ func Build(inv *inventory.Inventory, fs []*findings.Finding) (*Command, error) {
 				continue
 			}
 			pkgs := names(inv.Binaries(f.Source))
-			if isKernel(f.Source) {
+			if inventory.IsKernelSource(f.Source) {
 				if metas := kernelMetas(inv); len(metas) > 0 {
 					pkgs = metas
 				}
@@ -109,10 +106,6 @@ func names(ps []inventory.Package) []string {
 		out[i] = p.Name
 	}
 	return out
-}
-
-func isKernel(source string) bool {
-	return source == "linux" || (strings.HasPrefix(source, "linux-") && !notKernel[source])
 }
 
 // kernelMetas returns the installed kernel meta-packages (linux-generic,
