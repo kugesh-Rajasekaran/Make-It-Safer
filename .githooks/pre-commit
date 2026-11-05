@@ -1,0 +1,4 @@
+#!/bin/sh
+# Runs the same checks as CI before every commit.
+# Enable once per clone: git config core.hooksPath .githooks
+exec make check
