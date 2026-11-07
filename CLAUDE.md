@@ -51,7 +51,7 @@ Standards are adapted from the DineSynk repo (working style, engineering princip
 7. **Treat Collector output as hostile:** size limits, strict parsing, validation and fuzz tests.
 8. **No custom crypto.**
    - Use only `golang.org/x/crypto` primitives, with the parameters from the plan: Argon2id (RFC 9106), XChaCha20-Poly1305, Ed25519.
-   - Never weaken the passphrase policy (NIST SP 800-63B-4 plus design §5.2).
+   - The passphrase policy is design §5.2: at least 8 characters, nothing else (ADR 0001, the user's decision). Change it only with a new ADR.
 9. **Files:** the config directory is 0700 and files are 0600. Refuse to run if permissions are looser. No cloud sync, no telemetry.
 10. **Network allowlist:** connect only to the destinations in design §4.9. Adding one requires updating the design.
 
@@ -97,7 +97,7 @@ packaging/               launchd plist, systemd unit
 ### Errors and Output
 
 - **Error codes** are specific and prefixed by area (DineSynk pattern):
-  - ✅ `VAULT_PASSPHRASE_TOO_WEAK`, `SERVER_HOSTKEY_MISMATCH`, `OSV_QUERY_FAILED`
+  - ✅ `VAULT_PASSPHRASE_TOO_SHORT`, `SERVER_HOSTKEY_MISMATCH`, `OSV_QUERY_FAILED`
   - ❌ generic `NOT_FOUND`, `FAILED`, `INTERNAL_ERROR`
 - **Every command supports `--json`:**
   - Success: `{"ok": true, "data": …}`

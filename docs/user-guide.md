@@ -44,7 +44,7 @@ Run `mis init` and follow the steps. Every step after the passphrase can be skip
 
 | Step | What happens |
 |---|---|
-| 1. Passphrase | Choose one (at least 15 characters; several random words work best), or press Enter for a generated one. **It's never saved anywhere: keep it in your password manager.** It encrypts the key Make-It-Safer uses to read your servers. |
+| 1. Passphrase | Choose one (at least 8 characters), or press Enter for a generated one. **It's never saved anywhere: keep it in your password manager.** It encrypts the key Make-It-Safer uses to read your servers. |
 | 2. Terminal | The app that opens when you click a server button. `default` is Terminal on macOS, your desktop's terminal on Linux. |
 | 3. Alerts | The CVSS score from which fixable vulnerabilities alert you (default 7), and from which early warnings come (default 9, or `off`). |
 | 4. Servers | Adds your servers (see [Servers](#servers)). |

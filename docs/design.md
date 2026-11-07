@@ -31,7 +31,7 @@ Make-It-Safer is a command-line tool (`mis`) for people who run a few VPS server
 | Prioritisation | CISA KEV (actively exploited), EPSS (exploit probability), CVSS, OS end-of-life |
 | Server access | Dedicated read-only `mis` user with a forced command. No shell, no tunnels, no sudo. |
 | Login secret | One Ed25519 key, saved encrypted with your passphrase. Unlocked once per restart and held in memory only. |
-| Passphrase rules | NIST SP 800-63B-4 (Aug 2025), plus extra checks because the key file could be attacked offline (§5.2) |
+| Passphrase rules | At least 8 characters; looser than NIST SP 800-63B-4 by choice (§5.2, ADR 0001) |
 | Alerts | Desktop notifications only. One per CVE, one button per affected server, buttons don't close it. |
 | Fix flow | Button → configured terminal (default: system Terminal) → SSH with *your* admin login → update command already typed, waiting for Enter |
 | Testing | Claude: unit, lint and Docker tests with recorded data. You: real servers and your Mac/Linux desktop. |
@@ -382,23 +382,24 @@ There's no cloud sync and no telemetry. `mis doctor` warns if the directory sits
 
 ### 5.2 Passphrase standard
 
-The baseline is **NIST SP 800-63B-4** (final, August 2025), §3.1.1.2 *Password Verifiers*:
+**Rule: at least 8 characters.** That's the only check (decided in [ADR 0001](adr/0001-passphrase-minimum-8.md)). It is deliberately looser than **NIST SP 800-63B-4** (August 2025), §3.1.1.2 *Password Verifiers*:
 
 | NIST requirement | Our implementation |
 |---|---|
-| Single-factor passwords: **minimum 15 characters** (SHALL) | Minimum 15 characters, counted as Unicode code points |
+| Single-factor passwords: **minimum 15 characters** (SHALL) | **Not followed:** minimum 8 characters, counted as Unicode code points after NFC |
 | Permit a maximum of at least 64 (SHOULD) | Up to 1024 characters |
 | Accept printable ASCII, space and Unicode (SHOULD); NFC normalization | All accepted. NFC-normalized before key derivation. |
 | **No composition rules** (SHALL NOT) | No "must contain a symbol/number" rules |
-| **Blocklist** of common, expected and breached passwords, dictionary words and context words. Reject with a reason. (SHALL) | The zxcvbn estimator's bundled lists (common and breached passwords, English words, names), plus context words: `make-it-safer`, `mis`, your username, hostname and server names. The reason is shown. |
+| **Blocklist** of common, expected and breached passwords, dictionary words and context words. Reject with a reason. (SHALL) | **Not followed:** no blocklist and no strength estimate |
 | **No periodic change**; change only on compromise (SHALL NOT / SHALL) | No expiry. `mis passphrase change` when needed. |
 | **No hints** (SHALL NOT) | None stored |
 | Full password verified, no truncation (SHALL) | Whole passphrase goes into Argon2id |
 | Offer guidance (SHALL); allow paste and password managers (SHALL/SHOULD) | A plain-language reason for every rejection. Paste allowed. Offers a generated 6-word passphrase (EFF wordlist, ≈ 77 bits). |
 
-**Stricter than NIST, on purpose.** NIST assumes the server limits guessing attempts. A stolen `key.enc` can be guessed **offline** without any limit, so we add:
-- **Strength floor:** estimated at least 10¹⁴ guesses (≈ 47 bits) by a zxcvbn estimator. Weaker phrases are rejected with a reason.
+**What still protects a stolen `key.enc`:** it can be guessed **offline** without any limit, so the defence is:
 - **Slow derivation:** Argon2id at RFC 9106 parameters (§4.2), so each guess costs about 1 s and up to 2 GiB of memory.
+- **Limited blast radius:** the key only opens the read-only `mis` user (§4.1). It can list packages, nothing else.
+- **Residual risk:** a common or short passphrase (e.g. `password`) falls to a dictionary attack quickly. The generated passphrase avoids this.
 
 ---
 
@@ -410,7 +411,6 @@ The baseline is **NIST SP 800-63B-4** (final, August 2025), §3.1.1.2 *Password 
 | SSH | `golang.org/x/crypto/ssh` (client, host-key callback for pinning) |
 | Crypto | `golang.org/x/crypto/argon2`, `chacha20poly1305`; `awnumar/memguard` for secret memory |
 | Prompt | `golang.org/x/term` (no echo); `golang.org/x/text/unicode/norm` (NFC) |
-| Strength | Go zxcvbn port (chosen in M1) + embedded blocklist |
 | Linux notifications | `godbus/dbus/v5` |
 | macOS notifications | Swift helper app (SwiftPM), UserNotifications framework |
 | Config | YAML (`go.yaml.in/yaml/v3`, the maintained successor of `gopkg.in/yaml.v3`); state as JSON with atomic writes |

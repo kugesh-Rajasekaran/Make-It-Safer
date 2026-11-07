@@ -25,7 +25,7 @@ func (a *app) passphraseCmd() *cobra.Command {
 }
 
 func (a *app) runPassphraseChange() error {
-	paths, cfg, err := a.setup()
+	paths, _, err := a.setup()
 	if err != nil {
 		return err
 	}
@@ -42,7 +42,7 @@ func (a *app) runPassphraseChange() error {
 	}
 	key.Destroy()
 
-	next, err := a.newPassphrase(cfg)
+	next, err := a.newPassphrase()
 	if err != nil {
 		return err
 	}

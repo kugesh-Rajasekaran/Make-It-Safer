@@ -161,8 +161,8 @@ func TestInitWizard(t *testing.T) {
 
 	const pass = "glacier rhubarb tandem quiver lantern 77"
 	p.expect("New passphrase: ")
-	p.send("too short\r")
-	p.expect("Please try another one.")
+	p.send("short\r")
+	p.expect("use at least 8 characters (this one has 5). Please try another one.")
 	p.expect("New passphrase: ")
 	p.send(pass + "\r")
 	p.expect("Type it again to confirm: ")

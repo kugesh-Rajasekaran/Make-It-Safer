@@ -60,7 +60,7 @@ func (a *app) runInit() error {
 
 	a.say("Make-It-Safer keeps its files in %s\n(only you can read them; nothing is synced anywhere).\n", paths.Home)
 	a.say("\n1. Passphrase\n")
-	pass, err := a.newPassphrase(&cfg)
+	pass, err := a.newPassphrase()
 	if err != nil {
 		return err
 	}

@@ -3,8 +3,6 @@ package cli
 import (
 	"crypto/subtle"
 	"fmt"
-	"os"
-	"os/user"
 
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/apperr"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/config"
@@ -31,24 +29,9 @@ func (a *app) setup() (config.Paths, *config.Config, error) {
 	return paths, cfg, err
 }
 
-// contextWords are words an attacker would try first in your passphrase.
-func contextWords(cfg *config.Config) []string {
-	var words []string
-	if u, err := user.Current(); err == nil {
-		words = append(words, u.Username)
-	}
-	if h, err := os.Hostname(); err == nil {
-		words = append(words, h)
-	}
-	for _, s := range cfg.Servers {
-		words = append(words, s.Name, s.Host)
-	}
-	return words
-}
-
 //nolint:gosec // G101 false positive: help text that mentions passphrases, not a credential
 const passphraseHelp = `Choose a passphrase. You'll type it once after every restart of your computer.
-  • At least 15 characters. Spaces are fine. Several random words work best.
+  • At least 8 characters. Spaces are fine.
   • It is never saved anywhere, so keep it in your password manager.
   • Leave it empty and press Enter to get a generated one.
 
@@ -56,7 +39,7 @@ const passphraseHelp = `Choose a passphrase. You'll type it once after every res
 
 // newPassphrase asks for a passphrase until one meets the policy, then asks
 // to confirm it. An empty answer offers a generated passphrase.
-func (a *app) newPassphrase(cfg *config.Config) (secret.Bytes, error) {
+func (a *app) newPassphrase() (secret.Bytes, error) {
 	a.say(passphraseHelp)
 	for {
 		p, err := vault.ReadPassphrase(a.stdin, a.stderr, "New passphrase: ")
@@ -70,7 +53,7 @@ func (a *app) newPassphrase(cfg *config.Config) (secret.Bytes, error) {
 			a.say("\nYour generated passphrase (save it in your password manager, then clear your screen):\n\n    ")
 			_, _ = a.stderr.Write(p) // raw bytes: formatting a secret.Bytes prints [redacted]
 			a.say("\n\n")
-		} else if err := vault.CheckPassphrase(p, contextWords(cfg)); err != nil {
+		} else if err := vault.CheckPassphrase(p); err != nil {
 			p.Wipe()
 			a.say("✗ %s. Please try another one.\n\n", apperr.MessageOf(err))
 			continue

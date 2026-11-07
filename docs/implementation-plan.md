@@ -40,7 +40,7 @@ For every server you own, always know which vulnerabilities affect it, and be on
 
 ### Must have
 - Read-only `mis` user with a forced command; pinned host keys.
-- One passphrase per restart (NIST SP 800-63B-4 plus offline extras). The key is stored only encrypted; secrets live only in locked memory.
+- One passphrase per restart (at least 8 characters; ADR 0001). The key is stored only encrypted; secrets live only in locked memory.
 - Confirmed findings from distro data via OSV, prioritised with KEV, EPSS, CVSS and end-of-life, with reminders.
 - One notification per CVE with a button per server that doesn't close it. Each button opens Terminal (configurable) → SSH with your admin login → fix command typed in.
 - Early warning for severity ≥ 9 or exploited CVEs.
@@ -116,12 +116,12 @@ Goal: design §4.2 and §5.2.
 
 | ID | Task | Done when |
 |---|---|---|
-| T-101 | `feat(vault)` passphrase policy: NIST rules (≥ 15 code points after NFC, ≤ 1024, no composition rules), blocklist + context words, strength floor ≥ 10¹⁴ guesses, 6-word generator 🔒 | Accept/reject table tests with reasons; strength-estimator dependency justified; wordlist and blocklist licences noted |
+| T-101 | `feat(vault)` passphrase policy: ≥ 8 code points after NFC (ADR 0001; was ≥ 15 + blocklist + strength floor), ≤ 1024, no composition rules, 6-word generator 🔒 | Accept/reject table tests with reasons |
 | T-102 | `feat(vault)` key file: Ed25519, Argon2id (RFC 9106 parameters chosen by RAM), XChaCha20-Poly1305, authenticated header 🔒 | Round-trip works; wrong passphrase and tampered or truncated files rejected |
 | T-103 | `feat(vault)` secure memory (memguard), core dumps off, anti-debug, unlock rate limit 🔒 | Key buffer wiped on lock; delay grows after failed attempts |
 | T-104 | `feat(cli)` `mis init` (passphrase + key step) and `mis passphrase change`, TTY-only input | Piped input refused with `VAULT_TTY_REQUIRED` |
 
-**You check (Mac):** run `mis init`. A weak passphrase is rejected with a reason and a strong one is accepted. Then `mis passphrase change` works.
+**You check (Mac):** run `mis init`. A passphrase under 8 characters is rejected with a reason and an 8-character one is accepted. Then `mis passphrase change` works.
 
 ### M2 · Read-only server access (M)
 Goal: design §4.1.
@@ -237,7 +237,7 @@ The M2 Docker matrix also proves the sshd drop-in works on each distro.
 - [ ] Every apt security update shows up in `mis findings`.
 - [ ] One notification per CVE, with a button per affected server; clicking a button doesn't close it.
 - [ ] Button → Terminal → SSH → fix command typed in → Enter → ✅ resolved notification within an hour.
-- [ ] Weak passphrases are rejected with a reason.
+- [ ] Passphrases under 8 characters are rejected with a reason.
 - [ ] `mis doctor` is all green.
 
 ---

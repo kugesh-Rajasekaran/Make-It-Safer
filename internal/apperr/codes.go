@@ -22,7 +22,6 @@ const (
 	VaultPassphraseInvalid  = "VAULT_PASSPHRASE_INVALID"
 	VaultPassphraseTooShort = "VAULT_PASSPHRASE_TOO_SHORT"
 	VaultPassphraseTooLong  = "VAULT_PASSPHRASE_TOO_LONG"
-	VaultPassphraseTooWeak  = "VAULT_PASSPHRASE_TOO_WEAK"
 	VaultPassphraseMismatch = "VAULT_PASSPHRASE_MISMATCH"
 	VaultKeyExists          = "VAULT_KEY_EXISTS"
 	VaultKeyMissing         = "VAULT_KEY_MISSING"
