@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"strings"
 
@@ -14,11 +16,12 @@ import (
 )
 
 type initResult struct {
-	Home      string   `json:"home"`
-	PublicKey string   `json:"public_key"`
-	Servers   []string `json:"servers"`
-	Service   bool     `json:"service"`  // the background service runs
-	Unlocked  bool     `json:"unlocked"` // and is unlocked
+	Home       string   `json:"home"`
+	PublicKey  string   `json:"public_key"`
+	Servers    []string `json:"servers"`
+	Service    bool     `json:"service"`     // the background service runs
+	Unlocked   bool     `json:"unlocked"`    // and is unlocked
+	AutoUnlock bool     `json:"auto_unlock"` // it unlocks itself when you log in
 }
 
 func (a *app) initCmd() *cobra.Command {
@@ -45,6 +48,10 @@ func (a *app) runInit() error {
 	}
 	if err := paths.CheckPermissions(); err != nil {
 		return err
+	}
+	// A key.auto without key.enc is left over from a deleted key; it can't open the new one.
+	if err := os.Remove(paths.AutoKey); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return apperr.Wrap(apperr.ConfigWriteFailed, err, "cannot remove "+paths.AutoKey)
 	}
 	cfg := config.Default()
 	if paths.Initialized() {
@@ -95,5 +102,10 @@ func printInitResult(w io.Writer, res initResult) {
 	if len(res.Servers) == 0 {
 		_, _ = fmt.Fprintln(w, "  Add a server: mis server add")
 	}
-	_, _ = fmt.Fprintln(w, "  After every restart of your computer, unlock it once: mis unlock\n  Something off? Run: mis doctor")
+	if res.AutoUnlock {
+		_, _ = fmt.Fprintln(w, "  After a restart it unlocks itself when you log in.")
+	} else {
+		_, _ = fmt.Fprintln(w, "  After every restart of your computer, unlock it once: mis unlock")
+	}
+	_, _ = fmt.Fprintln(w, "  Something off? Run: mis doctor")
 }

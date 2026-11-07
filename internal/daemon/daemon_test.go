@@ -98,14 +98,22 @@ func startDaemon(t *testing.T, paths config.Paths, n notify.Notifier) *Daemon {
 // startDaemonLogging starts a daemon that logs everything (debug level) to w.
 func startDaemonLogging(t *testing.T, paths config.Paths, n notify.Notifier, w io.Writer) *Daemon {
 	t.Helper()
+	return startDaemonWith(t, paths, n, w, func(*Daemon) {})
+}
+
+// startDaemonWith lets configure change the daemon before it starts.
+func startDaemonWith(t *testing.T, paths config.Paths, n notify.Notifier, w io.Writer, configure func(*Daemon)) *Daemon {
+	t.Helper()
 	log := slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	d := New(paths, "test", log, n)
+	d.secrets = &keychain{}                          // never the real Keychain
 	d.feeds = feeds.NewForTest("http://127.0.0.1:1") // no network in tests
 	d.newEngine = func(cfg *config.Config) *engine.Engine {
 		e := engine.New(paths, cfg, "test", log)
 		e.KEV.Feeds = d.feeds
 		return e
 	}
+	configure(d)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {

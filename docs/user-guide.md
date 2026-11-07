@@ -34,7 +34,7 @@ make install
 
 - `mis` goes to `~/.local/bin`. If that isn't on your `PATH`, add it to `~/.zshrc` or `~/.bashrc`: `export PATH="$HOME/.local/bin:$PATH"`.
 - On macOS, `make install` also builds the notification helper (`Make-It-Safer Notifier.app`) into `~/Applications`.
-- To update later: `git pull && make install`. A running background service restarts with the new version; unlock it again.
+- To update later: `git pull && make install`. A running background service restarts with the new version; unlock it again. With auto-unlock on, macOS asks once to let the new version use your Keychain: click **Always Allow** (or **Allow**).
 
 ---
 
@@ -48,7 +48,7 @@ Run `mis init` and follow the steps. Every step after the passphrase can be skip
 | 2. Terminal | The app that opens when you click a server button. `default` is Terminal on macOS, your desktop's terminal on Linux. |
 | 3. Alerts | The CVSS score from which fixable vulnerabilities alert you (default 7), and from which early warnings come (default 9, or `off`). |
 | 4. Servers | Adds your servers (see [Servers](#servers)). |
-| 5. Background service | Starts at every login and checks on a schedule. It's unlocked with the passphrase from step 1. |
+| 5. Background service | Starts at every login and checks on a schedule. It's unlocked with the passphrase from step 1. On macOS you're then asked **"Unlock automatically when you log in?"** (Enter = yes): see [auto-unlock](#after-a-restart-unlock). |
 | 6. Notifications | Shows a test notification. On macOS, allow notifications for **Make-It-Safer Notifier** and choose the **Alerts** style, so they stay on screen. |
 | 7. First check | Reads each server's package list and shows what's open. |
 
@@ -112,8 +112,18 @@ Every command accepts `--json` for scripts and AI agents.
 After you restart your computer, the service starts **locked**: it keeps matching the saved package lists, but can't log in to your servers.
 
 - Click the "Make-It-Safer is locked" notification, or run `mis unlock`, and type your passphrase.
-- `mis lock` wipes the key from memory again, whenever you like.
+- `mis lock` wipes the key from memory again, whenever you like. It stays locked until `mis unlock` (or, with auto-unlock, your next login).
 - `mis passphrase change` changes your passphrase.
+
+**Auto-unlock (macOS):** the service unlocks itself when you log in, so you never type the passphrase after a restart.
+
+| | |
+|---|---|
+| Turn on | `mis auto-unlock on` (asks for your passphrase once), or answer yes in `mis init` |
+| Turn off | `mis auto-unlock off` |
+| How | An unlock key is kept in your login Keychain ("Make-It-Safer auto-unlock"), which macOS opens when you log in. Your passphrase is still never stored. |
+| After an update | macOS asks once to let the new `mis` use it: click **Always Allow**. |
+| Trade-off | Anyone who can use your Mac while you're logged in gets the same as an unlocked service: the package lists of your servers, nothing more. |
 
 ---
 
@@ -173,8 +183,9 @@ Run `mis doctor` after editing: a mistake in the file is reported with what is w
 ## Removing Make-It-Safer
 
 1. Remove each server: `mis server remove <name>`. This deletes the `mis` user on the server, through your own login.
-2. `make uninstall` (in the repository) removes the service, `mis` and the macOS helper.
-3. Delete Make-It-Safer's folder (see [Settings](#settings)) to remove your settings and encrypted key.
+2. `mis auto-unlock off`, if it's on. This removes the unlock key from your Keychain.
+3. `make uninstall` (in the repository) removes the service, `mis` and the macOS helper.
+4. Delete Make-It-Safer's folder (see [Settings](#settings)) to remove your settings and encrypted key.
 
 ---
 
@@ -188,8 +199,9 @@ Start with **`mis doctor`**: it checks everything and says what to do.
 | No notifications (Linux) | Your desktop needs a notification service (GNOME and KDE have one). Test with `mis notify test`. |
 | A button does nothing | Check the terminal in `mis doctor`. On Linux, the service may not see your desktop: `systemctl --user import-environment DISPLAY WAYLAND_DISPLAY DBUS_SESSION_BUS_ADDRESS`, then `mis service install`. |
 | "locked" | `mis unlock` |
+| "locked" although auto-unlock is on | Did you run `mis lock`? Otherwise macOS may be waiting for you to allow Keychain access, or it was denied: `mis auto-unlock on` sets it up again. |
 | "host key mismatch" | The server's identity changed. If you reinstalled it, that's expected: `mis server remove <name> --forget`, then add it again and compare the fingerprint. If you didn't, **don't connect**: someone may be intercepting the connection. |
 | "Vulnerability data is getting old" | Check your internet connection; `mis doctor` shows which source doesn't answer. |
 | Too many heads-ups | Raise `rules.early_warning.min_severity`, or set `enabled: false`. |
-| Forgot the passphrase | It can't be recovered. Remove each server (`mis server remove`), delete `key.enc` from Make-It-Safer's folder, run `mis init`, and add the servers again. |
+| Forgot the passphrase | It can't be recovered. Remove each server (`mis server remove`), delete `key.enc` from Make-It-Safer's folder, run `mis init`, and add the servers again. (With auto-unlock on, the service still unlocks until then, but the passphrase is needed to change settings that ask for it.) |
 | Anything else | `mis service logs` shows the background service's log. |

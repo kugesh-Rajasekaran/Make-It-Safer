@@ -10,6 +10,7 @@ import (
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/apperr"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/config"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/daemon"
+	"github.com/kugesh-rajasekaran/make-it-safer/internal/keyring"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/secret"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/setup"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/termlaunch"
@@ -42,6 +43,9 @@ func (w *wizard) run(res *initResult) error {
 		return err
 	}
 	if res.Service, res.Unlocked, err = w.service(); err != nil {
+		return err
+	}
+	if res.AutoUnlock, err = w.autoUnlock(); err != nil {
 		return err
 	}
 	if res.Service {
@@ -195,7 +199,7 @@ func (w *wizard) servers() ([]string, error) {
 func (w *wizard) service() (running, unlocked bool, err error) {
 	a := w.a
 	a.say("\n5. Background service\nIt checks your servers on a schedule and shows notifications. It starts at every\n" +
-		"login, locked; after each restart you unlock it once with your passphrase.\n")
+		"login, locked, until it's unlocked with your passphrase.\n")
 	ok, err := a.confirm("Install and start it now?", true)
 	if err != nil {
 		return false, false, err
@@ -226,6 +230,37 @@ func (w *wizard) service() (running, unlocked bool, err error) {
 	}
 	a.say("✓ Running and unlocked.\n")
 	return true, true, nil
+}
+
+// autoUnlock offers to let the background service unlock itself when you
+// log in (macOS only, ADR 0002). It reports whether auto-unlock is on.
+func (w *wizard) autoUnlock() (bool, error) {
+	a := w.a
+	if !keyring.Available() {
+		return false, nil
+	}
+	a.say("\nAfter a restart it can unlock itself when you log in, with an unlock key kept in\n" +
+		"your macOS Keychain. Your passphrase is still never stored.\n")
+	ok, err := a.confirm("Unlock automatically when you log in?", true)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		a.say("Later: mis auto-unlock on\n")
+		return false, nil
+	}
+	if a.unlocked == nil {
+		if a.unlocked, err = vault.Unlock(w.paths.KeyFile, w.pass); err != nil {
+			a.say("✗ %s\n  Try again later: mis auto-unlock on\n", apperr.MessageOf(err))
+			return false, nil
+		}
+	}
+	if _, err := a.enableAutoUnlock(w.paths, a.unlocked); err != nil {
+		a.say("✗ %s\n  Try again later: mis auto-unlock on\n", apperr.MessageOf(err))
+		return false, nil
+	}
+	a.say("✓ Auto-unlock is on.\n")
+	return true, nil
 }
 
 func (w *wizard) notifyTest() error {

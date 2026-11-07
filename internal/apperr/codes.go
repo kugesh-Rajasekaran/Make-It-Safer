@@ -30,6 +30,13 @@ const (
 	VaultUnlockFailed       = "VAULT_UNLOCK_FAILED"
 	VaultUnlockRateLimited  = "VAULT_UNLOCK_RATE_LIMITED"
 	VaultLocked             = "VAULT_LOCKED"
+	VaultAutoUnlockOff      = "VAULT_AUTO_UNLOCK_OFF"
+	VaultAutoUnlockFailed   = "VAULT_AUTO_UNLOCK_FAILED"
+
+	// Keyring: the OS secret store (macOS Keychain) used by auto-unlock
+	KeyringUnavailable = "KEYRING_UNAVAILABLE"
+	KeyringItemMissing = "KEYRING_ITEM_MISSING"
+	KeyringFailed      = "KEYRING_FAILED"
 
 	// Servers and SSH
 	ServerExists          = "SERVER_EXISTS"

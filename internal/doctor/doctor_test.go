@@ -70,6 +70,13 @@ func TestService(t *testing.T) {
 	want(t, "unlocked", Service(&daemon.ServiceInfo{Installed: true}, &daemon.Status{Version: "1.0"}), OK, "unlocked")
 }
 
+func TestAutoUnlock(t *testing.T) {
+	want(t, "off", AutoUnlock(false, &daemon.Status{}), OK, "off")
+	want(t, "on", AutoUnlock(true, &daemon.Status{}), OK, "unlocks itself")
+	want(t, "on, no service", AutoUnlock(true, nil), OK, "unlocks itself")
+	want(t, "on but locked", AutoUnlock(true, &daemon.Status{Locked: true}), Warn, "locked")
+}
+
 func TestNotifications(t *testing.T) {
 	want(t, "no service", Notifications(nil), Warn, "isn't running")
 	want(t, "banners", Notifications(&daemon.Status{Notifier: "macOS: banner style; choose Alerts"}), Fail, "choose Alerts")

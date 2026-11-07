@@ -30,7 +30,7 @@ Make-It-Safer is a command-line tool (`mis`) for people who run a few VPS server
 | Early warning (unconfirmed) | Official CVE List, polled every 15 min. Only **severity ≥ 9** or actively exploited, by default. |
 | Prioritisation | CISA KEV (actively exploited), EPSS (exploit probability), CVSS, OS end-of-life |
 | Server access | Dedicated read-only `mis` user with a forced command. No shell, no tunnels, no sudo. |
-| Login secret | One Ed25519 key, saved encrypted with your passphrase. Unlocked once per restart and held in memory only. |
+| Login secret | One Ed25519 key, saved encrypted with your passphrase. Unlocked once per restart (or by itself at login with auto-unlock, macOS Keychain) and held in memory only. |
 | Passphrase rules | At least 8 characters; looser than NIST SP 800-63B-4 by choice (§5.2, ADR 0001) |
 | Alerts | Desktop notifications only. One per CVE, one button per affected server, buttons don't close it. |
 | Fix flow | Button → configured terminal (default: system Terminal) → SSH with *your* admin login → update command already typed, waiting for Enter |
@@ -131,9 +131,18 @@ The key is then pinned. A mismatch later blocks the connection and triggers an u
 | Step | What happens |
 |---|---|
 | Setup | Generate an Ed25519 key. Encrypt it with your passphrase. Save `key.enc`. Install the public key on each server. |
-| Restart | Daemon starts **locked** → notification "Make-It-Safer is locked, click to unlock" |
+| Restart | Daemon starts **locked** → notification "Make-It-Safer is locked, click to unlock". With auto-unlock on, it unlocks itself instead (below). |
 | Unlock | Click → Terminal → `mis unlock` → type passphrase → key decrypted **into locked memory** → passphrase wiped |
-| Lock | Reboot, crash, logout or `mis lock` → key gone |
+| Lock | Reboot, crash, logout or `mis lock` → key gone. After `mis lock` it stays locked until `mis unlock` or the next start. |
+
+**Auto-unlock (optional, macOS; [ADR 0002](adr/0002-auto-unlock-keychain.md)):**
+- `key.auto` holds the same key, encrypted (XChaCha20-Poly1305, authenticated header with the public key) with a random 256-bit **unlock key**.
+- The unlock key lives in your **login Keychain**: item "Make-It-Safer auto-unlock", account = Make-It-Safer's folder, so separate installs never share one. macOS unlocks that Keychain when you log in.
+- Every Keychain call is pinned to the login keychain by its path, never the *default* keychain, which any program running as you can switch.
+- At start the daemon reads the unlock key and opens `key.auto`; no passphrase. The passphrase itself is still never stored, and `mis passphrase change` doesn't affect auto-unlock.
+- `key.auto` must match `key.enc`'s public key. A leftover from an older key fails safely (locked + notice), and `mis init` removes it.
+- macOS trusts only the build of `mis` that saved the item. `mis` is ad-hoc signed, so after each update macOS asks once ("Always Allow" doesn't last for ad-hoc builds). The daemon then saves the item again as the new build, and macOS stops asking.
+- On, off: `mis init` asks (default yes), or `mis auto-unlock on|off`. Linux (Secret Service) is planned.
 
 **Key file format (`key.enc`):**
 - Argon2id key derivation, using RFC 9106 recommended parameters:
@@ -329,6 +338,7 @@ mis server add|list|remove       manage servers
 mis server verify [name]         prove read-only restrictions
 mis server setup-script         print the setup script to run yourself
 mis unlock | mis lock            give / wipe the key (memory only)
+mis auto-unlock on|off           unlock by itself at login, with an unlock key in the Keychain
 mis status                       locked?, last checks, open findings per server
 mis findings [--server X]        what is vulnerable where
 mis show CVE-…                   details, servers, fix commands
@@ -351,6 +361,7 @@ Files live in `~/.config/mis` (Linux) or `~/Library/Application Support/MakeItSa
 |---|---|---|
 | `config.yaml` | Servers, rules, terminal, notification options | No |
 | `key.enc` | Encrypted private key | Encrypted |
+| `key.auto` | Same key, encrypted with the auto-unlock key (only while auto-unlock is on) | Encrypted |
 | `key.pub` | Public key | No |
 | `known_hosts` | Pinned server host keys | No |
 | `state/inventory/<server>.json` | Last package list | No (sensitive) |
@@ -369,7 +380,8 @@ There's no cloud sync and no telemetry. `mis doctor` warns if the directory sits
 
 | Threat | Protection |
 |---|---|
-| Laptop stolen while off | Only `key.enc` is on disk. Argon2id + strong passphrase. |
+| Laptop stolen while off | Only `key.enc` (and `key.auto`) are on disk. Argon2id + passphrase; the auto-unlock key sits in the login Keychain, encrypted with your Mac login password (and FileVault). |
+| Malware running as you, auto-unlock on | A separate program can't read the Keychain item silently (macOS asks), and switching the default keychain doesn't redirect it (calls are pinned to the login keychain). It can use the unlocked daemon, as it could anyway while unlocked. Code injected *into* `mis` could read the item: the hardened runtime (blocks `DYLD_INSERT_LIBRARIES`) is a follow-up. Same impact either way: package lists only. Turn auto-unlock off if you'd rather type the passphrase. |
 | Laptop compromised while unlocked | The key only opens the `mis` user, which can only print package lists. Admin credentials are never held by `mis`. |
 | Key file copied | Same as above. Offline guessing is slowed by Argon2id and strict passphrase rules. |
 | Man-in-the-middle on SSH | Pinned host keys. A mismatch blocks the connection and raises an urgent notification. |
@@ -443,6 +455,7 @@ The package layout is in `CLAUDE.md` (Layout).
 - Local matching mode (download distro data, nothing sent to OSV)
 - Other alert channels (Telegram, email, ntfy)
 - Password login for the `mis` user (fallback where keys are impossible)
+- Auto-unlock on Linux desktops (Secret Service: GNOME Keyring, KWallet)
 - Public release: Homebrew tap, signed release builds, Apple Developer ID signing and notarization
 - Optional online breach check for new passphrases (Have I Been Pwned range API)
 - Quiet hours, multiple users or teams

@@ -1,6 +1,7 @@
 package vault
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"io"
 	"sync"
@@ -39,6 +40,17 @@ func (k *Key) Destroy() {
 		k.buf.Destroy()
 		k.buf = nil
 	}
+}
+
+// seed returns a copy of the 32-byte Ed25519 seed (the first half of the
+// private key). The caller wipes it.
+func (k *Key) seed() ([]byte, error) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.buf == nil || !k.buf.IsAlive() {
+		return nil, apperr.New(apperr.VaultLocked, "Make-It-Safer is locked; run: mis unlock")
+	}
+	return bytes.Clone(k.buf.Bytes()[:ed25519.SeedSize]), nil
 }
 
 // Alive reports whether the key is still unlocked.

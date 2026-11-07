@@ -37,6 +37,7 @@ Standards are adapted from the DineSynk repo (working style, engineering princip
 
 1. **Secrets never leave memory.**
    - Passphrase, decrypted key and admin credentials are never written to disk, logs, error messages, env vars, command-line arguments or temp files.
+   - The one exception is opt-in auto-unlock (ADR 0002): a random unlock key goes only to the OS secret store (macOS login Keychain) via `internal/keyring`, never anywhere else.
    - The passphrase is read only from the TTY (`golang.org/x/term`), never from flags or env.
 2. **Secrets live in locked memory** (`memguard`) and are wiped after use. Core dumps are disabled in the daemon.
 3. **`mis` never holds the user's admin login.** Server setup and fixes run through the user's own `ssh` binary in their terminal.
@@ -75,7 +76,8 @@ internal/cli/            commands (cobra)
 internal/apperr/         error type + registry of area-prefixed codes
 internal/secret/         secret byte type that never prints, logs or marshals
 internal/daemon/         scheduler, socket server, lock state
-internal/vault/          passphrase policy, key file, secure memory
+internal/vault/          passphrase policy, key file, auto-unlock file (key.auto), secure memory
+internal/keyring/        OS secret store for the auto-unlock key (macOS Keychain via cgo; Linux later)
 internal/sshx/           SSH client, host-key pinning, collector call
 internal/inventory/      collector output parser + validation
 internal/feeds/{osv,kev,epss,cvelist,eol}/
@@ -105,7 +107,7 @@ packaging/               launchd plist, systemd unit
   - Human-readable output otherwise.
 - **Agent-surface lens** (DineSynk): "Can an AI agent do this through the CLI?"
   - **Yes** for status, findings, checks and ack.
-  - **Deliberately no** for unlock (the passphrase is TTY-only) and server setup (needs the human's admin login).
+  - **Deliberately no** for unlock and `mis auto-unlock on` (the passphrase is TTY-only) and server setup (needs the human's admin login).
 
 ### Logging
 

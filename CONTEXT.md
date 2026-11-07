@@ -69,6 +69,13 @@ _Avoid_: keystore, vault file
 **Locked / Unlocked**:
 The Daemon's two states. While Locked, it matches against saved Inventories only. While Unlocked, it holds the key in memory and can refresh Inventories over SSH.
 
+**Auto-unlock**:
+The Daemon unlocks itself when the user logs in, with an Unlock key kept in the macOS login Keychain. Optional; `mis lock` still locks until `mis unlock` or the next login.
+_Avoid_: auto-login, remember me, keychain mode
+
+**Unlock key**:
+The random 256-bit key in the Keychain that opens `key.auto` (the same private key, encrypted for Auto-unlock). Not the Passphrase.
+
 **Daemon**:
 The `mis` background service that runs at login on Your computer.
 _Avoid_: agent (confused with ssh-agent and AI agents), worker

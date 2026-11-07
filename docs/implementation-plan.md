@@ -97,6 +97,7 @@ For every server you own, always know which vulnerabilities affect it, and be on
 | M5 | Notifications and fix flow (Mac first) | L | click a server button and get SSH with the fix typed in | ✅ Built · S2/S3 on your Mac and Linux desktop |
 | M6 | Early warning | S | get heads-ups for critical CVEs within ~15 min | ✅ Done |
 | M7 | Setup wizard and polish | M | set everything up with `mis init` alone | ✅ Built · your fresh-setup check pending |
+| M8 | Auto-unlock (macOS) | M | restart your Mac and never type the passphrase | ✅ Built · tested on your Mac |
 
 ### M0 · Foundations (S)
 Goal: an empty but solid project.
@@ -215,6 +216,21 @@ Built and tested here:
 - **T-705:** every fuzz target ran for 30 s, and the Docker integration suite passes on Ubuntu (Debian runs in CI). The log scan is a test now. The threat-model walkthrough found one gap: a host-key mismatch during a background refresh was only logged. It now raises an urgent notification.
 
 **You check:** a fresh setup on your Mac using only the user guide.
+
+### M8 · Auto-unlock, macOS (M)
+Goal: design §4.2 (auto-unlock), [ADR 0002](adr/0002-auto-unlock-keychain.md). Branch: `feat/auto-unlock`.
+
+| ID | Task | Done when |
+|---|---|---|
+| T-801 | `feat(keyring)` macOS Keychain item (Security framework via cgo): set, get, delete, all pinned to the login keychain by path; re-saved after each read so the current build owns it 🔒 | Round trip against the real Keychain (`-tags keychain`); item found in `login.keychain-db` |
+| T-802 | `feat(vault)` `key.auto`: the key encrypted with a random 256-bit unlock key; enable, open, disable; bound to `key.enc`'s public key 🔒 | Tamper, wrong-key, stale-file and store-failure tests |
+| T-803 | `feat(daemon)` unlock itself at start; locked notice only if that fails; `mis lock` wins over an unlock in progress; one passphrase unlock at a time | Daemon tests with a fake Keychain |
+| T-804 | `feat(cli)` `mis auto-unlock on\|off`, wizard question (default yes), status and doctor lines | Tried on your Mac |
+| T-805 | `docs` design, user guide, glossary, ADR 0002 | — |
+
+Built and tested on your Mac: auto-unlock at start in ~20 ms, `mis lock` stays locked, off → locked after restart, on while locked → unlocks now. The Linux build compiles and lints (`mis auto-unlock on` there returns `KEYRING_UNAVAILABLE`; not run on a Linux desktop). After a rebuild macOS asked once; "Always Allow" alone didn't last for ad-hoc builds, so the item is re-saved by the new build, and later starts were silent.
+
+**You check:** turn it on for your real install (`mis auto-unlock on`), restart your Mac, log in, run `mis status`: unlocked, no passphrase typed.
 
 ---
 

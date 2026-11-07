@@ -18,12 +18,13 @@ import (
 
 // Operations the daemon understands.
 const (
-	OpStatus = "status"
-	OpUnlock = "unlock"
-	OpLock   = "lock"
-	OpCheck  = "check"
-	OpFix    = "fix"         // open a terminal with the fix for a server (M5)
-	OpNotify = "notify-test" // show a test notification (M5)
+	OpStatus     = "status"
+	OpUnlock     = "unlock"
+	OpAutoUnlock = "auto-unlock" // unlock with the key in your Keychain (ADR 0002)
+	OpLock       = "lock"
+	OpCheck      = "check"
+	OpFix        = "fix"         // open a terminal with the fix for a server (M5)
+	OpNotify     = "notify-test" // show a test notification (M5)
 )
 
 // Request is one call. Each connection carries exactly one.
@@ -51,12 +52,13 @@ type ErrorBody struct {
 
 // Status is the answer to OpStatus.
 type Status struct {
-	Version  string               `json:"version"`
-	Locked   bool                 `json:"locked"`
-	Started  time.Time            `json:"started"`
-	Notifier string               `json:"notifier"`
-	Ready    bool                 `json:"notifier_ready"` // notifications show and stay on screen
-	Jobs     map[string]*JobState `json:"jobs"`
+	Version    string               `json:"version"`
+	Locked     bool                 `json:"locked"`
+	AutoUnlock bool                 `json:"auto_unlock"` // unlocks itself when you log in
+	Started    time.Time            `json:"started"`
+	Notifier   string               `json:"notifier"`
+	Ready      bool                 `json:"notifier_ready"` // notifications show and stay on screen
+	Jobs       map[string]*JobState `json:"jobs"`
 }
 
 // CheckResult is the answer to OpCheck.

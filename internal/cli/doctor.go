@@ -18,7 +18,9 @@ import (
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/doctor"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/feeds"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/findings"
+	"github.com/kugesh-rajasekaran/make-it-safer/internal/keyring"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/termlaunch"
+	"github.com/kugesh-rajasekaran/make-it-safer/internal/vault"
 )
 
 func (a *app) doctorCmd() *cobra.Command {
@@ -48,9 +50,14 @@ func (a *app) doctorCmd() *cobra.Command {
 				doctor.Files(paths),
 				doctor.NotSynced(paths.Home, userHome),
 				doctor.Service(daemon.ServiceState(paths), status),
+			}
+			if keyring.Available() {
+				results = append(results, doctor.AutoUnlock(vault.AutoUnlockEnabled(paths.AutoKey), status))
+			}
+			results = append(results,
 				doctor.Notifications(status),
 				doctor.Terminal(termlaunch.Launcher{Terminal: cfg.Terminal}),
-			}
+			)
 			if runtime.GOOS == "linux" {
 				out, _ := exec.CommandContext(ctx, "systemctl", "--user", "show-environment").Output()
 				results = append(results, doctor.Desktop(strings.Split(string(out), "\n")))

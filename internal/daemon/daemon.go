@@ -14,8 +14,8 @@ import (
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/config"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/engine"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/feeds"
+	"github.com/kugesh-rajasekaran/make-it-safer/internal/keyring"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/notify"
-	"github.com/kugesh-rajasekaran/make-it-safer/internal/secret"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/vault"
 )
 
@@ -32,24 +32,28 @@ type Daemon struct {
 	ctx           context.Context
 	followUpEvery time.Duration
 
-	mu      sync.Mutex
-	key     *vault.Key                 // nil while locked
-	clicked map[string]map[string]bool // notification group → servers whose fix button was used
-	limiter vault.Limiter
-	sched   *scheduler
-	started time.Time
+	mu        sync.Mutex
+	key       *vault.Key                 // nil while locked
+	locks     uint64                     // counts locks, so an unlock that started before one is dropped
+	secrets   vault.SecretStore          // holds the auto-unlock key
+	clicked   map[string]map[string]bool // notification group → servers whose fix button was used
+	unlocking sync.Mutex                 // one passphrase unlock at a time
+	limiter   vault.Limiter
+	sched     *scheduler
+	started   time.Time
 }
 
 // New returns a daemon for the given install.
 func New(paths config.Paths, version string, log *slog.Logger, notifier notify.Notifier) *Daemon {
 	d := &Daemon{paths: paths, version: version, log: log, notifier: notifier, now: time.Now, feeds: feeds.New(version),
-		ctx: context.Background(), followUpEvery: followUpEvery, clicked: map[string]map[string]bool{}}
+		ctx: context.Background(), followUpEvery: followUpEvery, secrets: keyring.AutoUnlock(paths.Home), clicked: map[string]map[string]bool{}}
 	d.newEngine = func(cfg *config.Config) *engine.Engine { return engine.New(paths, cfg, version, log) }
 	return d
 }
 
 // Run serves the CLI and runs scheduled jobs until ctx ends. It starts
-// locked: you unlock it once after each restart.
+// locked; with auto-unlock on it unlocks itself, otherwise you unlock it
+// once after each restart.
 func (d *Daemon) Run(ctx context.Context) error {
 	_ = vault.Harden()
 	if err := d.paths.RequireInitialized(); err != nil {
@@ -66,7 +70,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	d.sched = newScheduler(d.jobs(), filepath.Join(d.paths.State, "schedule.json"), d.now, d.unlocked, d.log)
 	go d.serve(ctx, l)
 	go d.handleClicks(ctx)
-	d.showLockNotice()
+	d.unlockAtStart()
 	d.log.Info("daemon", "status", "start", "version", d.version, "notifier", d.notifier.Describe())
 	d.sched.loop(ctx, time.Minute)
 	d.log.Info("daemon", "status", "stop")
@@ -89,6 +93,8 @@ func (d *Daemon) dispatch(ctx context.Context, req Request) (any, error) {
 		return d.status(), nil
 	case OpUnlock:
 		return nil, d.unlock(req.Passphrase)
+	case OpAutoUnlock:
+		return nil, d.autoUnlock()
 	case OpLock:
 		d.lock()
 		d.showLockNotice()
@@ -108,58 +114,8 @@ func (d *Daemon) dispatch(ctx context.Context, req Request) (any, error) {
 }
 
 func (d *Daemon) status() Status {
-	return Status{Version: d.version, Locked: !d.unlocked(), Started: d.started, Notifier: d.notifier.Describe(), Ready: d.notifier.Ready(), Jobs: d.sched.snapshot()}
-}
-
-func (d *Daemon) unlocked() bool {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	return d.key != nil && d.key.Alive()
-}
-
-// unlock decrypts the key into locked memory. Failed attempts slow down.
-func (d *Daemon) unlock(passphrase []byte) error {
-	p := secret.Bytes(passphrase)
-	defer p.Wipe()
-	if wait := d.limiter.Wait(); wait > 0 {
-		return apperr.New(apperr.VaultUnlockRateLimited, fmt.Sprintf("too many failed attempts; try again in %s", wait.Round(time.Second)))
-	}
-	key, err := vault.Unlock(d.paths.KeyFile, p)
-	if err != nil {
-		if apperr.Is(err, apperr.VaultUnlockFailed) {
-			d.limiter.Failure()
-		}
-		d.log.Warn("unlock", "status", "error", "code", apperr.CodeOf(err))
-		return err
-	}
-	d.limiter.Success()
-	d.mu.Lock()
-	if d.key != nil {
-		d.key.Destroy()
-	}
-	d.key = key
-	d.mu.Unlock()
-	d.log.Info("unlock", "status", "success")
-	_ = d.notifier.Remove(lockNoticeID)
-	d.sched.trigger("refresh")
-	return nil
-}
-
-// lock wipes the key from memory.
-func (d *Daemon) lock() {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if d.key != nil {
-		d.key.Destroy()
-		d.key = nil
-		d.log.Info("lock", "status", "success")
-	}
-}
-
-func (d *Daemon) currentKey() *vault.Key {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	return d.key
+	return Status{Version: d.version, Locked: !d.unlocked(), AutoUnlock: vault.AutoUnlockEnabled(d.paths.AutoKey), Started: d.started,
+		Notifier: d.notifier.Describe(), Ready: d.notifier.Ready(), Jobs: d.sched.snapshot()}
 }
 
 // check runs a check now for the CLI.

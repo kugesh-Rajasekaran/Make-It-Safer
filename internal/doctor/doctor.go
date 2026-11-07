@@ -101,6 +101,22 @@ func Service(info *daemon.ServiceInfo, status *daemon.Status) Result {
 	return r
 }
 
+// AutoUnlock reports whether the background service unlocks itself when you
+// log in (macOS Keychain, ADR 0002). enabled means key.auto exists.
+func AutoUnlock(enabled bool, status *daemon.Status) Result {
+	r := Result{Name: "Auto-unlock"}
+	switch {
+	case !enabled:
+		r.Level, r.Detail = OK, "off: after each restart, run mis unlock (or turn it on: mis auto-unlock on)"
+	case status != nil && status.Locked:
+		r.Level, r.Detail = Warn, "on, but the background service is locked (after mis lock, or if your Keychain refused it)"
+		r.Fix = "mis unlock; if this happens after every restart: mis auto-unlock on, and click Always Allow when macOS asks"
+	default:
+		r.Level, r.Detail = OK, "on: it unlocks itself when you log in"
+	}
+	return r
+}
+
 // Notifications checks that notifications show and stay on screen.
 func Notifications(status *daemon.Status) Result {
 	r := Result{Name: "Notifications"}

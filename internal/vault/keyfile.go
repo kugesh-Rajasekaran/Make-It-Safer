@@ -106,12 +106,18 @@ func Unlock(keyPath string, passphrase secret.Bytes) (*Key, error) {
 	if err != nil {
 		return nil, err
 	}
+	return keyFromSeed(seed, f.Header.PublicKey, "key.enc")
+}
+
+// keyFromSeed turns a decrypted seed into a Key, after checking it belongs
+// to publicKey (an authorized_keys line). It wipes seed.
+func keyFromSeed(seed []byte, publicKey, file string) (*Key, error) {
 	priv := ed25519.NewKeyFromSeed(seed)
 	clear(seed)
 	derived, err := ssh.NewPublicKey(priv.Public())
-	if err != nil || AuthorizedKey(derived) != f.Header.PublicKey {
+	if err != nil || AuthorizedKey(derived) != publicKey {
 		clear(priv)
-		return nil, apperr.New(apperr.VaultKeyFileInvalid, "key.enc does not match its public key; it may have been tampered with")
+		return nil, apperr.New(apperr.VaultKeyFileInvalid, file+" does not match its public key; it may have been tampered with")
 	}
 	return newKey(priv, derived), nil // takes ownership of priv and wipes it
 }

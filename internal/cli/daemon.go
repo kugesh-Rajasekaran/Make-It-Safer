@@ -146,6 +146,8 @@ func printStatus(w io.Writer, v statusView) {
 		_, _ = fmt.Fprintln(w, "Background service: not running (start it with: mis service install)")
 	case v.Service.Locked:
 		_, _ = fmt.Fprintln(w, "Background service: running · 🔒 LOCKED (run: mis unlock)")
+	case v.Service.AutoUnlock:
+		_, _ = fmt.Fprintln(w, "Background service: running · unlocked · unlocks itself at login")
 	default:
 		_, _ = fmt.Fprintln(w, "Background service: running · unlocked")
 	}

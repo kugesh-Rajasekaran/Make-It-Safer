@@ -66,3 +66,18 @@ Append-only log of non-obvious discoveries. Newest last.
 
 - **What:** The background refresh only logged a host-key mismatch, so the promised alert never showed. It's now an urgent notification. Walk design §5.1 against the code when changing the refresh path.
 - **Files:** `internal/daemon/alerts.go` (`refreshFailed`)
+
+## 2026-11-07 · Keychain trust doesn't survive a rebuild of an ad-hoc binary
+
+- **What:** A Keychain item saved by one build of `mis` is read silently only by that exact build (same cdhash). After `make install`, macOS asks; on a real Mac, "Always Allow" didn't stop the prompt for the same rebuilt binary on its next start. Saving the item again from the new build (delete + add) made later starts silent, so `keyring.Item.Get` re-saves after every read. Deleting the old item from the allowed new build didn't prompt.
+- **Files:** `internal/keyring/keyring_darwin.go`, `docs/adr/0002-auto-unlock-keychain.md`
+
+## 2026-11-07 · One Keychain item per install
+
+- **What:** A fixed item name would let a second install (`MIS_HOME`, tests) overwrite the real install's unlock key. The item's account is Make-It-Safer's folder (`keyring.AutoUnlock(paths.Home)`).
+- **Files:** `internal/keyring/keyring.go`
+
+## 2026-11-08 · SecItemAdd writes to the default keychain, which anyone can switch
+
+- **What:** On macOS, `SecItemAdd` without `kSecUseKeychain` adds to the *default* keychain, and `security default-keychain -s` changes it with no prompt. A program running as you could point it at a keychain whose password it knows, and the next save (we re-save on every read) would land there. All keyring calls now open `~/Library/Keychains/login.keychain-db` by path (home from `getpwuid_r`, not `$HOME`) and use `kSecUseKeychain` / `kSecMatchSearchList`. `SecKeychainOpen` is deprecated but is the only way to name a file keychain without an Apple-issued identity. Found by the security review.
+- **Files:** `internal/keyring/keyring_darwin.go`, `docs/adr/0002-auto-unlock-keychain.md`

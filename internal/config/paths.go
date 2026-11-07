@@ -21,6 +21,7 @@ type Paths struct {
 	Home       string // base directory
 	Config     string // config.yaml
 	KeyFile    string // key.enc: the encrypted private key
+	AutoKey    string // key.auto: the same key, encrypted for auto-unlock (only while it's on)
 	PublicKey  string // key.pub: the public key installed on servers
 	KnownHosts string // pinned server host keys
 	State      string // state/
@@ -65,6 +66,7 @@ func PathsAt(home string) Paths {
 		Home:       home,
 		Config:     filepath.Join(home, "config.yaml"),
 		KeyFile:    filepath.Join(home, "key.enc"),
+		AutoKey:    filepath.Join(home, "key.auto"),
 		PublicKey:  filepath.Join(home, "key.pub"),
 		KnownHosts: filepath.Join(home, "known_hosts"),
 		State:      state,
@@ -92,7 +94,7 @@ func (p Paths) Ensure() error {
 // CheckPermissions refuses to continue when another user could read or
 // change Make-It-Safer's files.
 func (p Paths) CheckPermissions() error {
-	for _, path := range []string{p.Home, p.State, p.Inventory, p.Cache, p.Temp, p.Config, p.KeyFile, p.KnownHosts} {
+	for _, path := range []string{p.Home, p.State, p.Inventory, p.Cache, p.Temp, p.Config, p.KeyFile, p.AutoKey, p.KnownHosts} {
 		if err := CheckPrivate(path); err != nil {
 			return err
 		}
