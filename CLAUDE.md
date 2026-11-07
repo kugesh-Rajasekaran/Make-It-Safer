@@ -106,7 +106,7 @@ packaging/               launchd plist, systemd unit
   - Failure: `{"ok": false, "error": {"code": "…", "message": "…"}}`
   - Human-readable output otherwise.
 - **Agent-surface lens** (DineSynk): "Can an AI agent do this through the CLI?"
-  - **Yes** for status, findings, checks and ack.
+  - **Yes** for status, findings, checks, ack and settings (`mis config get/set`).
   - **Deliberately no** for unlock and `mis auto-unlock on` (the passphrase is TTY-only) and server setup (needs the human's admin login).
 
 ### Logging

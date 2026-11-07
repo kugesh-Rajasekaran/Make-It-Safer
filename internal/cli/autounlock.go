@@ -44,21 +44,7 @@ func (a *app) runAutoUnlockOn() error {
 	if err != nil {
 		return err
 	}
-	if err := keyring.Require(); err != nil {
-		return err
-	}
-	_ = vault.Harden()
-	pass, err := vault.ReadPassphrase(a.stdin, a.stderr, "Passphrase: ")
-	if err != nil {
-		return err
-	}
-	defer pass.Wipe()
-	key, err := vault.Unlock(paths.KeyFile, pass)
-	if err != nil {
-		return err
-	}
-	defer key.Destroy()
-	res, err := a.enableAutoUnlock(paths, key)
+	res, err := a.autoUnlockOn(paths)
 	if err != nil {
 		return err
 	}
@@ -72,12 +58,29 @@ func (a *app) runAutoUnlockOff() error {
 	if err != nil {
 		return err
 	}
-	if err := vault.DisableAutoUnlock(paths.AutoKey, keyring.AutoUnlock(paths.Home)); err != nil {
+	if err := autoUnlockOff(paths); err != nil {
 		return err
 	}
 	return a.emit(autoUnlockResult{}, func(w io.Writer) {
 		_, _ = fmt.Fprintln(w, "✓ Auto-unlock is off. After each restart, unlock with: mis unlock")
 	})
+}
+
+// autoUnlockOn asks for the passphrase once and turns auto-unlock on.
+func (a *app) autoUnlockOn(paths config.Paths) (autoUnlockResult, error) {
+	if err := keyring.Require(); err != nil {
+		return autoUnlockResult{}, err
+	}
+	key, err := a.unlockKey(paths)
+	if err != nil {
+		return autoUnlockResult{}, err
+	}
+	defer key.Destroy()
+	return a.enableAutoUnlock(paths, key)
+}
+
+func autoUnlockOff(paths config.Paths) error {
+	return vault.DisableAutoUnlock(paths.AutoKey, keyring.AutoUnlock(paths.Home))
 }
 
 // enableAutoUnlock turns auto-unlock on for an unlocked key. If the

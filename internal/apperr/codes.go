@@ -13,6 +13,7 @@ const (
 	ConfigNotOwned           = "CONFIG_NOT_OWNED"
 	ConfigUnreadable         = "CONFIG_UNREADABLE"
 	ConfigInvalid            = "CONFIG_INVALID"
+	ConfigUnknownSetting     = "CONFIG_UNKNOWN_SETTING"
 	ConfigWriteFailed        = "CONFIG_WRITE_FAILED"
 	ConfigNotInitialized     = "CONFIG_NOT_INITIALIZED"
 	ConfigLockFailed         = "CONFIG_LOCK_FAILED"

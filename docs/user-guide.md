@@ -146,37 +146,43 @@ After you restart your computer, the service starts **locked**: it keeps matchin
 
 ## Settings
 
-Your settings are in `config.yaml`, in Make-It-Safer's folder:
+Run **`mis config`**. It shows every setting with its current value, 10 at a time:
 
-| | Folder |
-|---|---|
-| macOS | `~/Library/Application Support/MakeItSafer` (logs: `~/Library/Logs/MakeItSafer`) |
-| Linux | `~/.config/mis` |
+```
+Make-It-Safer settings      ↑/↓ move · Enter change · q quit
 
-The parts you may want to change:
-
-```yaml
-rules:
-  alert_when:
-    actively_exploited: true   # CISA KEV
-    min_severity: 7.0          # CVSS
-    min_epss: 0.10             # exploit probability
-  early_warning:
-    enabled: true
-    min_severity: 9.0          # e.g. 8.0 for more heads-ups
-  unfixed: urgent_only         # alert without a fix only if urgent
-  ignore:
-    packages: [linux-firmware]
-    cves: []
-terminal:
-  app: default                 # or iterm2, ghostty, kitty, … or custom
-  command: ""                  # custom only, e.g. "foot {script}"
-notifications:
-  sound: true
-  max_buttons: 3               # server buttons + "All servers…"
+› Alerts         Alert for fixable vulnerabilities from CVSS     7.0
+                 …or when the exploit chance (EPSS) is at least  10%
+                 Always alert actively exploited (CISA KEV)      yes
+                 Alert when there's no fix yet                   only when urgent
+  Early warnings Heads-ups before your distro confirms           on, from CVSS 9.0
+  Reminders      Remind urgent findings                          every 4h
+                 …
+                 ↓ 4 more
 ```
 
-Run `mis doctor` after editing: a mistake in the file is reported with what is wrong.
+- **↑/↓** move (the list scrolls), **Enter** changes the highlighted setting, **q** quits.
+- Yes/no settings flip on Enter. Choices open a small list. Others ask for the new value; Enter alone keeps the current one, and a wrong value is explained.
+- Each change is saved right away, and you're back on the same list.
+- The background service picks changes up within 15 minutes. New alert scores apply at its next check; `mis check` applies them now.
+
+**For scripts and agents:** `mis config get` lists every setting by name, `mis config get <name>` prints one, `mis config set <name> <value>` changes one (all accept `--json`):
+
+| Name | Example value | Means |
+|---|---|---|
+| `rules.alert_when.min_severity` | `7.0` | Alert for fixable vulnerabilities from this CVSS score |
+| `rules.alert_when.min_epss` | `10%` | …or from this exploit chance |
+| `rules.alert_when.actively_exploited` | `yes` | Always alert for CISA's actively-exploited list |
+| `rules.unfixed` | `urgent_only` or `all` | Alert for vulnerabilities without a fix |
+| `rules.early_warning` | `9.0` or `off` | Heads-ups before your distro confirms |
+| `rules.remind.urgent` / `.high` / `.normal` | `4h` / `1d` / `7d` | How often open findings are repeated |
+| `rules.ignore.packages` / `.cves` | `linux-firmware,tzdata` | Never alert for these |
+| `terminal.app` | `default`, `iterm2`, `ghostty`, …, `custom` | The app a server button opens |
+| `terminal.command` | `foot {script}` | Only for `custom` (set it first) |
+| `notifications.sound` | `yes` | Play a sound with alerts |
+| `notifications.max_buttons` | `3` | Buttons per notification, servers plus "All servers…" |
+
+The settings live in `config.yaml` in Make-It-Safer's folder (`~/Library/Application Support/MakeItSafer` on macOS, `~/.config/mis` on Linux). You can still edit it by hand; `mis doctor` reports any mistake.
 
 ---
 

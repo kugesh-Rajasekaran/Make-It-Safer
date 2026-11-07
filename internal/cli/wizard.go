@@ -67,22 +67,11 @@ func (w *wizard) close() {
 	}
 }
 
-// terminalApps are the choices offered on each system.
-func terminalApps(goos string) []string {
-	if goos == "darwin" {
-		return []string{"default", "iterm2", "ghostty", "kitty", "alacritty", "wezterm", "custom"}
-	}
-	return []string{"default", "gnome-terminal", "kgx", "konsole", "xfce4-terminal", "kitty", "alacritty", "wezterm", "ghostty", "xterm", "custom"}
-}
-
 func (w *wizard) terminal() error {
 	a := w.a
 	a.say("\n2. Terminal\nA notification's server button opens an SSH session in this app, with the fix typed in.\n")
-	apps, def := terminalApps(runtime.GOOS), "your desktop's terminal"
-	if runtime.GOOS == "darwin" {
-		def = "Terminal"
-	}
-	a.say("Choices: %s (\"default\" is %s)\n", strings.Join(apps, ", "), def)
+	apps := config.TerminalChoices(runtime.GOOS)
+	a.say("Choices: %s (\"default\" is %s)\n", strings.Join(apps, ", "), config.DefaultTerminalName(runtime.GOOS))
 	for {
 		app, err := a.ask("Terminal app", w.cfg.Terminal.App)
 		if err != nil {

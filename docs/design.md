@@ -339,6 +339,8 @@ mis server verify [name]         prove read-only restrictions
 mis server setup-script         print the setup script to run yourself
 mis unlock | mis lock            give / wipe the key (memory only)
 mis auto-unlock on|off           unlock by itself at login, with an unlock key in the Keychain
+mis config                       every setting in one list: ↑/↓ move, Enter change, q quit
+mis config get [name] | set <name> <value>   the same settings for scripts and agents
 mis status                       locked?, last checks, open findings per server
 mis findings [--server X]        what is vulnerable where
 mis show CVE-…                   details, servers, fix commands

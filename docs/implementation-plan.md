@@ -98,6 +98,7 @@ For every server you own, always know which vulnerabilities affect it, and be on
 | M6 | Early warning | S | get heads-ups for critical CVEs within ~15 min | ✅ Done |
 | M7 | Setup wizard and polish | M | set everything up with `mis init` alone | ✅ Built · your fresh-setup check pending |
 | M8 | Auto-unlock (macOS) | M | restart your Mac and never type the passphrase | ✅ Built · tested on your Mac |
+| M9 | Settings screen | S | change alert scores, reminders and the terminal with `mis config` | ✅ Built · tested in a real terminal |
 
 ### M0 · Foundations (S)
 Goal: an empty but solid project.
@@ -231,6 +232,17 @@ Goal: design §4.2 (auto-unlock), [ADR 0002](adr/0002-auto-unlock-keychain.md). 
 Built and tested on your Mac: auto-unlock at start in ~20 ms, `mis lock` stays locked, off → locked after restart, on while locked → unlocks now. The Linux build compiles and lints (`mis auto-unlock on` there returns `KEYRING_UNAVAILABLE`; not run on a Linux desktop). After a rebuild macOS asked once; "Always Allow" alone didn't last for ad-hoc builds, so the item is re-saved by the new build, and later starts were silent.
 
 **You check:** turn it on for your real install (`mis auto-unlock on`), restart your Mac, log in, run `mis status`: unlocked, no passphrase typed.
+
+### M9 · Settings screen (S)
+Goal: change settings without editing YAML. Branch: `feat/config-command`.
+
+| ID | Task | Done when |
+|---|---|---|
+| T-901 | `feat(config)` one settings table (name, label, how it's edited, parse and show); every change validated, rejected values leave the file untouched | Round-trip and rejection tests for every setting |
+| T-902 | `feat(cli)` `mis config`: every setting in one list, 10 rows at a time, ↑/↓ scroll, Enter edits (yes/no flips, choices as a list, values asked with the current one as default), back to the same place; auto-unlock row on macOS | Driven with real arrow keys through a pseudo-terminal |
+| T-903 | `feat(cli)` `mis config get [name]` and `set <name> <value>` with `--json`; without a terminal `mis config` prints the list | CLI tests |
+
+**You check:** run `mis config`, change a reminder, quit, and see it with `mis config get`.
 
 ---
 
