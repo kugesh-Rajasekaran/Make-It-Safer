@@ -132,6 +132,9 @@ func (d *Daemon) dispatch(ctx context.Context, req Request) (any, error) {
 }
 
 func (d *Daemon) status() Status {
+	if r, ok := d.notifier.(notify.Rechecker); ok {
+		r.Recheck(time.Second) // report today's System Settings, not what they were at start
+	}
 	return Status{Version: d.version, Locked: !d.unlocked(), AutoUnlock: vault.AutoUnlockEnabled(d.paths.AutoKey), Started: d.started,
 		Notifier: d.notifier.Describe(), Ready: d.notifier.Ready(), Jobs: d.sched.snapshot()}
 }

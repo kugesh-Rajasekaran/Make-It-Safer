@@ -48,6 +48,7 @@ type Helper struct {
 	launched   time.Time
 	authorized bool
 	alertStyle string
+	fresh      chan struct{} // closed when the next settings report arrives (Recheck)
 }
 
 // NewHelper listens on socketPath and starts the helper app with launch.
@@ -116,6 +117,10 @@ func (h *Helper) read(conn net.Conn) {
 		case "settings":
 			h.mu.Lock()
 			h.authorized, h.alertStyle = m.Authorized, m.AlertStyle
+			if h.fresh != nil {
+				close(h.fresh)
+				h.fresh = nil
+			}
 			h.mu.Unlock()
 		}
 	}
@@ -181,6 +186,23 @@ func (h *Helper) Remove(id string) error {
 
 // Events reports clicks.
 func (h *Helper) Events() <-chan Event { return h.events }
+
+// Recheck asks the helper app whether notifications are allowed now (you may
+// just have changed it in System Settings) and waits up to timeout for the
+// answer, which Describe and Ready then use.
+func (h *Helper) Recheck(timeout time.Duration) {
+	h.mu.Lock()
+	if h.fresh == nil {
+		h.fresh = make(chan struct{})
+	}
+	fresh := h.fresh
+	h.mu.Unlock()
+	h.send(message{Op: "settings"})
+	select {
+	case <-fresh:
+	case <-time.After(timeout):
+	}
+}
 
 // Describe says whether the helper is connected and how macOS shows its notifications.
 func (h *Helper) Describe() string {

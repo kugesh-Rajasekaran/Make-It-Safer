@@ -76,4 +76,26 @@ func TestHelperProtocol(t *testing.T) {
 	if d := h.Describe(); d != "macOS (Alerts style)" {
 		t.Fatalf("Describe() = %q", d)
 	}
+
+	// Recheck asks the helper for the current settings and waits for them:
+	// here you switched to Banners in System Settings.
+	go func() {
+		_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+		line, err := r.ReadBytes('\n')
+		var m message
+		if err == nil && json.Unmarshal(line, &m) == nil && m.Op == "settings" {
+			_, _ = conn.Write([]byte(`{"op":"settings","authorized":true,"alertStyle":"banner"}` + "\n"))
+		}
+	}()
+	h.Recheck(5 * time.Second)
+	if h.Ready() || !strings.Contains(h.Describe(), "banner style") {
+		t.Fatalf("after Recheck: ready %v, %q", h.Ready(), h.Describe())
+	}
+
+	// A helper that doesn't answer doesn't hang the caller.
+	start := time.Now()
+	h.Recheck(100 * time.Millisecond)
+	if time.Since(start) > 2*time.Second {
+		t.Fatal("Recheck waited too long")
+	}
 }

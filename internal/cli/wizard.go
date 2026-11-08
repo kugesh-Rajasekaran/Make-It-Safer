@@ -280,26 +280,11 @@ func (w *wizard) autoUnlock() (bool, error) {
 func (w *wizard) notifyTest() error {
 	a := w.a
 	a.say("\n6. Notifications\n")
-	if err := daemon.Call(w.paths, daemon.Request{Op: daemon.OpNotify}, nil, 10*time.Second); err != nil {
-		a.say("✗ %s\n  Try again later: mis notify test\n", apperr.MessageOf(err))
-		return nil
-	}
-	seen, err := a.confirm("A test notification with two buttons should be on your screen. Do you see it?", true)
-	if err != nil {
-		return err
-	}
-	if seen {
-		a.say("Click one of its buttons: your terminal should open and show mis status.\n")
-		return nil
-	}
 	if runtime.GOOS == "darwin" {
-		a.say("On macOS, notifications come from the helper app in ~/Applications (installed by make install).\n" +
-			"In System Settings → Notifications → Make-It-Safer Notifier, allow notifications and pick the\n" +
-			"\"Alerts\" style, so they stay on screen. Then try: mis notify test\n")
-	} else {
-		a.say("Your desktop needs a notification service (GNOME, KDE and most desktops have one).\nThen try: mis notify test, or see: mis doctor\n")
+		a.say("macOS needs your OK before Make-It-Safer can show alerts.\n")
 	}
-	return nil
+	_, err := a.setUpNotifications(w.paths)
+	return err
 }
 
 func (w *wizard) firstCheck() {

@@ -352,6 +352,7 @@ mis fix <server> [CVE…]          same as clicking a button
 mis pick CVE-…                   server picker (used by "All servers…")
 mis ack CVE-… [--server X] [--until DATE] [--reason TEXT]
 mis passphrase change            re-encrypt key with a new passphrase
+mis notify setup                 allow notifications (opens System Settings on macOS, checks), then a test
 mis notify test                  send a test notification with buttons
 mis service install|uninstall|status|logs
 mis doctor                       files, sync, service, notifications, terminal, desktop session,

@@ -124,7 +124,7 @@ func Notifications(status *daemon.Status) Result {
 	case status == nil:
 		r.Level, r.Detail = Warn, "unknown while the background service isn't running"
 	case !status.Ready:
-		r.Level, r.Detail, r.Fix = Fail, status.Notifier, "fix that, then try: mis notify test"
+		r.Level, r.Detail, r.Fix = Fail, status.Notifier, "mis notify setup"
 	default:
 		r.Level, r.Detail = OK, status.Notifier
 	}

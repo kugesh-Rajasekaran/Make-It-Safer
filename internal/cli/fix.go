@@ -124,6 +124,24 @@ func (a *app) pickCmd() *cobra.Command {
 func (a *app) notifyCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "notify", Short: "Desktop notifications", Args: cobra.NoArgs}
 	cmd.AddCommand(&cobra.Command{
+		Use:   "setup",
+		Short: "Allow notifications (opens System Settings on macOS), then show a test",
+		Args:  cobra.NoArgs,
+		RunE: func(*cobra.Command, []string) error {
+			paths, _, err := a.setup()
+			if err != nil {
+				return err
+			}
+			if !daemon.Running(paths) {
+				return apperr.New(apperr.DaemonNotRunning, "the background service is not running; start it with: mis service install")
+			}
+			ready, err := a.setUpNotifications(paths)
+			if err != nil {
+				return err
+			}
+			return a.emit(map[string]bool{"ready": ready}, func(io.Writer) {})
+		},
+	}, &cobra.Command{
 		Use: "test", Short: "Show a test notification with buttons", Args: cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
 			paths, _, err := a.setup()

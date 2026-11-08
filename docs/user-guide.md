@@ -50,7 +50,7 @@ Run `mis init` and follow the steps. Every step after the passphrase can be skip
 | 3. Alerts | The CVSS score from which fixable vulnerabilities alert you (default 7), and from which early warnings come (default 9, or `off`). |
 | 4. Servers | First: **"Check this Mac too?"** (Enter = yes; on Linux "this computer"), see [This computer](#this-computer). Then adds your servers (see [Servers](#servers)). |
 | 5. Background service | Starts at every login and checks on a schedule. It's unlocked with the passphrase from step 1. On macOS you're then asked **"Unlock automatically after a restart?"** (Enter = yes; your passphrase is never stored): see [auto-unlock](#after-a-restart-unlock). |
-| 6. Notifications | Shows a test notification. On macOS, allow notifications for **Make-It-Safer Notifier** and choose the **Alerts** style, so they stay on screen. |
+| 6. Notifications | On macOS it opens **System Settings › Notifications › Make-It-Safer Notifier** for you: turn on *Allow notifications*, choose **Alerts** (they stay on screen), press Enter. It checks, and opens it again if something's still off. Then it shows a test notification. Later, the same with `mis notify setup`. |
 | 7. First check | Reads each server's package list and shows what's open. |
 
 When it's done, `mis doctor` should be all green (✓).
@@ -223,7 +223,7 @@ Start with **`mis doctor`**: it checks everything and says what to do.
 
 | Problem | What to do |
 |---|---|
-| No notifications (macOS) | `make install` puts the helper in `~/Applications`. Then System Settings → Notifications → **Make-It-Safer Notifier**: allow, and choose **Alerts**. Test with `mis notify test`. |
+| No notifications (macOS) | `mis notify setup`: it opens the right page in System Settings, checks the result and shows a test. (The helper app lives in `~/Applications`; `make install` puts it there.) |
 | No notifications (Linux) | Your desktop needs a notification service (GNOME and KDE have one). Test with `mis notify test`. |
 | A button does nothing | Check the terminal in `mis doctor`. On Linux, the service may not see your desktop: `systemctl --user import-environment DISPLAY WAYLAND_DISPLAY DBUS_SESSION_BUS_ADDRESS`, then `mis service install`. |
 | "locked" | `mis unlock` |
