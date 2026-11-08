@@ -232,7 +232,8 @@ func TestInitWizard(t *testing.T) {
 			t.Error("the service was unlocked with the wrong passphrase")
 		}
 	}
-	if strings.Join(ops, ",") != "unlock,notify-test" {
+	// No server was added, but this computer is checked: the first check runs.
+	if strings.Join(ops, ",") != "unlock,notify-test,check" {
 		t.Errorf("service calls = %v", ops)
 	}
 }
