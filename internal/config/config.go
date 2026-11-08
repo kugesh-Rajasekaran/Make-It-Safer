@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"regexp"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -21,18 +22,46 @@ import (
 // Config is config.yaml. It never holds secrets.
 type Config struct {
 	Version       int           `yaml:"version"`
+	ThisComputer  bool          `yaml:"this_computer"` // also check the computer mis runs on
 	Servers       []Server      `yaml:"servers"`
 	Rules         Rules         `yaml:"rules"`
 	Terminal      Terminal      `yaml:"terminal"`
 	Notifications Notifications `yaml:"notifications"`
 }
 
-// Server is a VPS registered with Make-It-Safer.
+// Server is a VPS registered with Make-It-Safer, or this computer (Local).
 type Server struct {
 	Name     string `yaml:"name"`      // short name shown in notifications, e.g. ovh-web-1
 	Host     string `yaml:"host"`      // IP address or hostname
 	Port     int    `yaml:"port"`      // SSH port
 	AdminSSH string `yaml:"admin_ssh"` // your own login as typed after `ssh`: user@host or an ~/.ssh/config alias
+	Local    bool   `yaml:"-"`         // this computer: checked directly, no SSH
+}
+
+// LocalName is this computer's name in findings and notifications.
+func LocalName() string {
+	if runtime.GOOS == "darwin" {
+		return "this-mac"
+	}
+	return "this-computer"
+}
+
+// LocalLabel is how notifications and screens call this computer.
+func LocalLabel() string {
+	if runtime.GOOS == "darwin" {
+		return "This Mac"
+	}
+	return "This computer"
+}
+
+// Checked lists everything a check covers: the servers, then this computer
+// when this_computer is on.
+func (c *Config) Checked() []Server {
+	out := slices.Clone(c.Servers)
+	if c.ThisComputer {
+		out = append(out, Server{Name: LocalName(), Local: true})
+	}
+	return out
 }
 
 // Rules decide which vulnerabilities alert you and how often you're reminded.
@@ -164,11 +193,11 @@ func (c *Config) Save(path string) error {
 
 // Server returns the server with the given name.
 func (c *Config) Server(name string) (Server, bool) {
-	i := slices.IndexFunc(c.Servers, func(s Server) bool { return s.Name == name })
+	i := slices.IndexFunc(c.Checked(), func(s Server) bool { return s.Name == name })
 	if i < 0 {
 		return Server{}, false
 	}
-	return c.Servers[i], true
+	return c.Checked()[i], true
 }
 
 var (
@@ -185,6 +214,8 @@ func (s Server) Validate() error {
 	switch {
 	case !serverNamePattern.MatchString(s.Name):
 		return fmt.Errorf("name %q: use lowercase letters, digits, '.', '_' or '-' (max 63)", s.Name)
+	case s.Name == "this-mac" || s.Name == "this-computer":
+		return fmt.Errorf("name %q is kept for this computer; choose another", s.Name)
 	case !hostPattern.MatchString(s.Host):
 		return fmt.Errorf("host %q is not a valid hostname or IP address", s.Host)
 	case s.Port < 1 || s.Port > 65535:

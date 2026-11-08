@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -52,7 +53,14 @@ is combined into one command.`,
 				return err
 			}
 			return a.emit(map[string]string{"opened": args[0]}, func(w io.Writer) {
-				_, _ = fmt.Fprintf(w, "✓ Opened an SSH session to %s in your terminal.\n", args[0])
+				switch {
+				case args[0] != config.LocalName():
+					_, _ = fmt.Fprintf(w, "✓ Opened an SSH session to %s in your terminal.\n", args[0])
+				case runtime.GOOS == "darwin":
+					_, _ = fmt.Fprintln(w, "✓ Opened System Settings › Software Update.")
+				default:
+					_, _ = fmt.Fprintln(w, "✓ Opened the fix for this computer in your terminal.")
+				}
 			})
 		},
 	}

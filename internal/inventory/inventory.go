@@ -30,17 +30,43 @@ const (
 	header      = "mis-collect 1"
 )
 
-// Inventory is what a server reported.
+// Inventory is what a server (or this computer) reported.
 type Inventory struct {
 	CollectedAt    time.Time `json:"collected_at"`
-	OSID           string    `json:"os_id"`      // ubuntu, debian
-	OSVersion      string    `json:"os_version"` // 24.04, 12
+	OSID           string    `json:"os_id"`      // ubuntu, debian, macos
+	OSVersion      string    `json:"os_version"` // 24.04, 12, 15.7.7
 	Kernel         string    `json:"kernel"`     // running kernel (uname -r)
 	Arch           string    `json:"arch"`       // dpkg architecture
 	RebootRequired bool      `json:"reboot_required"`
 	Groups         []string  `json:"groups"` // groups of the mis user
 	Packages       []Package `json:"packages"`
+	Mac            *Mac      `json:"mac,omitempty"` // this computer, when it's a Mac
 }
+
+// Mac is what a Mac reports instead of a package list.
+type Mac struct {
+	Safari   string        `json:"safari,omitempty"` // installed Safari version
+	Updates  []AppleUpdate `json:"updates"`          // pending, from softwareupdate --list
+	Homebrew []BrewPackage `json:"homebrew"`         // outdated Homebrew packages
+}
+
+// AppleUpdate is one update Apple offers for this Mac.
+type AppleUpdate struct {
+	Label   string `json:"label"` // softwareupdate's ID, e.g. "macOS Sequoia 15.8.2-24H232"
+	Title   string `json:"title"` // e.g. "macOS Sequoia 15.8.2"
+	Version string `json:"version"`
+	Restart bool   `json:"restart"`
+}
+
+// BrewPackage is one outdated Homebrew package.
+type BrewPackage struct {
+	Name      string `json:"name"`
+	Installed string `json:"installed"`
+	Current   string `json:"current"`
+}
+
+// IsMac reports whether this is a Mac's inventory.
+func (inv *Inventory) IsMac() bool { return inv.OSID == "macos" && inv.Mac != nil }
 
 // Package is one installed binary package and the source it was built from.
 // Distros file vulnerabilities under the source package name.

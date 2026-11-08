@@ -65,7 +65,7 @@ func (a *app) doctorCmd() *cobra.Command {
 			a.say("Checking the data sources…\n")
 			results = append(results,
 				doctor.Reachable(ctx, feeds.New(version), doctor.Sources),
-				doctor.Servers(cfg.Servers, st.Checked, time.Now()),
+				doctor.Servers(cfg.Checked(), st.Checked, time.Now()),
 				doctor.Data(status, time.Now()),
 			)
 

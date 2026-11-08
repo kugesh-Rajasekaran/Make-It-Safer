@@ -89,7 +89,11 @@ func Lookup(key string) (Setting, bool) {
 // Settings lists everything mis config can change, in screen order.
 func Settings() []Setting {
 	r := func(c *Config) *Rules { return &c.Rules }
+	thisComputer := toggle("this_computer", "Also check "+strings.ToLower(LocalLabel()[:1])+LocalLabel()[1:],
+		func(c *Config) *bool { return &c.ThisComputer })
+	thisComputer.Group = "Devices"
 	return []Setting{
+		thisComputer,
 		{Key: "rules.alert_when.min_severity", Group: "Alerts", Label: "Alert for fixable vulnerabilities from CVSS",
 			Question: "CVSS score (0–10)",
 			value:    func(c *Config) string { return score(r(c).AlertWhen.MinSeverity) },

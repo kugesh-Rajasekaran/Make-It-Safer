@@ -7,8 +7,11 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
+
+	"golang.org/x/crypto/ssh"
 
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/apperr"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/config"
@@ -124,7 +127,7 @@ func (d *Daemon) check(ctx context.Context, req Request) (*engine.Result, error)
 	if err != nil {
 		return nil, err
 	}
-	servers := cfg.Servers
+	servers := cfg.Checked()
 	if len(req.Servers) > 0 {
 		servers = nil
 		for _, name := range req.Servers {
@@ -137,11 +140,15 @@ func (d *Daemon) check(ctx context.Context, req Request) (*engine.Result, error)
 	}
 	eng := d.newEngine(cfg)
 	if req.Refresh {
-		key := d.currentKey()
-		if key == nil {
-			return nil, apperr.New(apperr.VaultLocked, "Make-It-Safer is locked; run: mis unlock (or check with --no-refresh)")
+		var signer ssh.Signer // this computer is read without the key
+		if slices.ContainsFunc(servers, func(s config.Server) bool { return !s.Local }) {
+			key := d.currentKey()
+			if key == nil {
+				return nil, apperr.New(apperr.VaultLocked, "Make-It-Safer is locked; run: mis unlock (or check with --no-refresh)")
+			}
+			signer = key.Signer()
 		}
-		d.refreshFailed(eng.Refresh(ctx, key.Signer(), servers)) // failures also show up per server below
+		d.refreshFailed(eng.Refresh(ctx, signer, servers)) // failures also show up per server below
 	}
 	res, err := eng.Match(ctx, servers)
 	if err != nil {
@@ -215,10 +222,15 @@ func (d *Daemon) jobMatch(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if len(cfg.Servers) == 0 {
+	servers := cfg.Checked()
+	if len(servers) == 0 {
 		return nil
 	}
-	res, err := d.newEngine(cfg).Match(ctx, cfg.Servers)
+	// This computer needs no key, so it's read again on every match, even
+	// while locked; servers are refreshed by the refresh job.
+	eng := d.newEngine(cfg)
+	d.refreshFailed(eng.Refresh(ctx, nil, servers))
+	res, err := eng.Match(ctx, servers)
 	if err != nil {
 		return err
 	}
@@ -232,10 +244,10 @@ func (d *Daemon) jobEarly(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if len(cfg.Servers) == 0 || !cfg.Rules.EarlyWarning.Enabled {
+	if len(cfg.Checked()) == 0 || !cfg.Rules.EarlyWarning.Enabled {
 		return nil
 	}
-	res, err := d.newEngine(cfg).EarlyWarnings(ctx, cfg.Servers)
+	res, err := d.newEngine(cfg).EarlyWarnings(ctx, cfg.Checked())
 	if err != nil {
 		return err
 	}

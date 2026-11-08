@@ -15,6 +15,7 @@ import (
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/apperr"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/config"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/feeds"
+	"github.com/kugesh-rajasekaran/make-it-safer/internal/feeds/apple"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/feeds/cvelist"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/feeds/eol"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/feeds/epss"
@@ -22,6 +23,7 @@ import (
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/feeds/osv"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/findings"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/inventory"
+	"github.com/kugesh-rajasekaran/make-it-safer/internal/local"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/sshx"
 )
 
@@ -34,8 +36,11 @@ type Engine struct {
 	EPSS  *epss.Client
 	EOL   *eol.Client
 	CVE   *cvelist.Client
+	Apple *apple.Client // security notes, for this computer when it's a Mac
 	Now   func() time.Time
 	Log   *slog.Logger
+	// Local reads this computer's inventory (replaced in tests).
+	Local func(context.Context, time.Time) (*inventory.Inventory, error)
 }
 
 // New wires the engine to the real data sources.
@@ -44,7 +49,7 @@ func New(paths config.Paths, cfg *config.Config, version string, log *slog.Logge
 	return &Engine{
 		Paths: paths, Rules: cfg.Rules,
 		OSV: osv.New(fc, paths), KEV: kev.New(fc, paths), EPSS: epss.New(fc), EOL: eol.New(fc), CVE: cvelist.New(fc, paths),
-		Now: time.Now, Log: log,
+		Apple: apple.New(fc, paths), Now: time.Now, Log: log, Local: local.Collect,
 	}
 }
 
@@ -65,14 +70,24 @@ type Result struct {
 	Warnings []string         `json:"warnings,omitempty"`
 }
 
-// Refresh logs in to each server as "mis" and saves its package list. It
-// returns the servers that failed, with why.
+// Refresh saves each server's package list: this computer's is read
+// directly; servers are logged in to as "mis", which needs signer (without
+// it they're skipped). It returns the servers that failed, with why.
 func (e *Engine) Refresh(ctx context.Context, signer ssh.Signer, servers []config.Server) map[string]error {
 	hk := sshx.HostKeys{Path: e.Paths.KnownHosts}
 	failed := map[string]error{}
 	for _, s := range servers {
+		if !s.Local && signer == nil {
+			continue
+		}
 		e.Log.Debug("refresh", "status", "start", "server", s.Name)
-		inv, err := collect(ctx, sshx.TargetOf(s), hk, signer, e.Now())
+		var inv *inventory.Inventory
+		var err error
+		if s.Local {
+			inv, err = e.Local(ctx, e.Now())
+		} else {
+			inv, err = collect(ctx, sshx.TargetOf(s), hk, signer, e.Now())
+		}
 		if err == nil {
 			err = inventory.Save(e.Paths, s.Name, inv)
 		}
@@ -99,11 +114,11 @@ func collect(ctx context.Context, t sshx.Target, hk sshx.HostKeys, signer ssh.Si
 	return inventory.Parse(out, now)
 }
 
-// Check refreshes package lists when a key is given (nil = use the saved
-// lists), then matches them. failed lists servers whose refresh failed.
-func (e *Engine) Check(ctx context.Context, signer ssh.Signer, servers []config.Server) (*Result, error) {
+// Check refreshes package lists when refresh is set (servers only with a
+// signer, see Refresh), then matches the saved lists.
+func (e *Engine) Check(ctx context.Context, refresh bool, signer ssh.Signer, servers []config.Server) (*Result, error) {
 	failed := map[string]error{}
-	if signer != nil {
+	if refresh {
 		failed = e.Refresh(ctx, signer, servers)
 	}
 	res, err := e.Match(ctx, servers)
@@ -151,7 +166,8 @@ func (e *Engine) Match(ctx context.Context, servers []config.Server) (*Result, e
 			continue
 		}
 		w.inv, w.result.OS = inv, inv.OSID+" "+inv.OSVersion
-		if !inv.Supported() {
+		thisMac := s.Local && inv.IsMac()
+		if !inv.Supported() && !thisMac {
 			w.result.Code, w.result.Error = apperr.ServerUnsupportedOS, "only Ubuntu and Debian are supported"
 			continue
 		}
@@ -161,6 +177,9 @@ func (e *Engine) Match(ctx context.Context, servers []config.Server) (*Result, e
 				res.Warnings = append(res.Warnings, "end-of-life dates unavailable: "+apperr.MessageOf(err))
 			}
 			cycles[inv.OSID] = c
+		}
+		if inv.IsMac() {
+			continue // matched against Apple's security notes, not OSV (step 3)
 		}
 		w.first = len(queries)
 		for _, eco := range osv.Ecosystems(inv.OSID, inv.OSVersion) {
@@ -188,11 +207,22 @@ func (e *Engine) Match(ctx context.Context, servers []config.Server) (*Result, e
 		if w.inv == nil || w.result.Code != "" {
 			continue
 		}
-		fs := vulnFindings(w, refs[w.first:w.first+len(w.queries)], vulns, catalog)
-		if f := rebootFinding(w.server.Name, w.inv); f != nil {
-			fs = append(fs, f)
+		var fs []*findings.Finding
+		release := w.inv.OSVersion
+		if w.inv.IsMac() {
+			mac, err := e.macFindings(ctx, w.server.Name, w.inv, catalog)
+			if err != nil { // keep the last findings rather than resolve them by mistake
+				w.result.Code, w.result.Error = apperr.CodeOf(err), "Apple's security notes unavailable: "+apperr.MessageOf(err)
+				continue
+			}
+			fs, release = mac, apple.Major(w.inv.OSVersion)
+		} else {
+			fs = vulnFindings(w, refs[w.first:w.first+len(w.queries)], vulns, catalog)
+			if f := rebootFinding(w.server.Name, w.inv); f != nil {
+				fs = append(fs, f)
+			}
 		}
-		if f := eolFinding(w.server.Name, w.inv, cycles[w.inv.OSID], now); f != nil {
+		if f := eolFinding(w.server.Name, w.inv.OSID, release, cycles[w.inv.OSID], now); f != nil {
 			fs = append(fs, f)
 		}
 		current[w.server.Name] = fs
@@ -221,7 +251,7 @@ func (e *Engine) Match(ctx context.Context, servers []config.Server) (*Result, e
 			}
 			_, seen := st.Checked[w.server.Name]
 			w.result.First = !seen
-			kinds := []findings.Kind{findings.KindVulnerability, findings.KindReboot}
+			kinds := []findings.Kind{findings.KindVulnerability, findings.KindReboot, findings.KindUpdates}
 			if cycles[w.inv.OSID] != nil {
 				kinds = append(kinds, findings.KindEndOfLife)
 			}

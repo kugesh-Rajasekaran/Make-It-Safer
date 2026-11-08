@@ -18,6 +18,7 @@ const (
 	KindReboot        Kind = "reboot"        // a patched kernel is installed but not running
 	KindEndOfLife     Kind = "end-of-life"   // the OS release no longer gets (free) security fixes
 	KindEarlyWarning  Kind = "early-warning" // unconfirmed: from the CVE List, before the distro assessed it
+	KindUpdates       Kind = "updates"       // packages with newer versions but no CVE data (Homebrew on a Mac)
 )
 
 // How an early warning ended (Finding.Resolution).

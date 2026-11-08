@@ -115,3 +115,10 @@ func printable(s string) string {
 		return r
 	}, s)
 }
+
+// LocalFixLauncher runs a fix script on this computer, without SSH (a Linux
+// desktop that checks itself). It deletes itself.
+func LocalFixLauncher(script string) string {
+	return "#!/bin/sh\n# Make-It-Safer: the fix for this computer, typed in. This file deletes itself.\n" +
+		"rm -f -- \"$0\"\nexec " + RemoteCommand(script) + "\n"
+}

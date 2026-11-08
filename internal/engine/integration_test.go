@@ -63,7 +63,7 @@ func TestCheckFindsAndResolves(t *testing.T) {
 	srv.WaitReady()
 
 	// The fake data only knows Ubuntu 24.04; skip if the image is another release.
-	res, err := e.Check(context.Background(), misKey, []config.Server{server})
+	res, err := e.Check(context.Background(), true, misKey, []config.Server{server})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestCheckFindsAndResolves(t *testing.T) {
 	}
 
 	installDummy(t, srv, "1:9.6p1-3ubuntu13.8") // the "upgrade"
-	if _, err := e.Check(context.Background(), misKey, []config.Server{server}); err != nil {
+	if _, err := e.Check(context.Background(), true, misKey, []config.Server{server}); err != nil {
 		t.Fatal(err)
 	}
 	st, _ = findings.Load(paths)
@@ -119,7 +119,7 @@ echo 'deb [trusted=yes] file:/srv/repo ./' > /etc/apt/sources.list.d/mis-test.li
 	e.Paths.KnownHosts = hk.Path
 	server := config.Server{Name: "it", Host: srv.Target.Host, Port: srv.Target.Port, AdminSSH: "admin@" + srv.Target.Host}
 	srv.WaitReady()
-	if res, err := e.Check(context.Background(), misKey, []config.Server{server}); err != nil || res.Servers[0].OS != "ubuntu 24.04" {
+	if res, err := e.Check(context.Background(), true, misKey, []config.Server{server}); err != nil || res.Servers[0].OS != "ubuntu 24.04" {
 		t.Skipf("needs Ubuntu 24.04 (fake data): %v %+v", err, res)
 	}
 
@@ -156,7 +156,7 @@ echo 'deb [trusted=yes] file:/srv/repo ./' > /etc/apt/sources.list.d/mis-test.li
 	term.WaitFor(t, "Setting up openssh-dummy (1:9.6p1-3ubuntu13.8)", 2*time.Minute)
 	term.Type("exit\r")
 
-	if _, err := e.Check(context.Background(), misKey, []config.Server{server}); err != nil {
+	if _, err := e.Check(context.Background(), true, misKey, []config.Server{server}); err != nil {
 		t.Fatal(err)
 	}
 	st, _ = findings.Load(paths)

@@ -178,6 +178,8 @@ func TestInitWizard(t *testing.T) {
 	p.send("8\n")
 	p.expect("Play a sound with alerts? (Y/n): ")
 	p.send("n\n")
+	p.expect("Check this computer too? (Y/n): ")
+	p.send("\n")
 	p.expect("Add a server now? (Y/n): ")
 	p.send("n\n")
 	p.expect("Install and start it now? (Y/n): ")
@@ -211,6 +213,9 @@ func TestInitWizard(t *testing.T) {
 	r := cfg.Rules
 	if cfg.Terminal.App != "default" || r.AlertWhen.MinSeverity != 6.5 || !r.EarlyWarning.Enabled || r.EarlyWarning.MinSeverity != 8 || cfg.Notifications.Sound {
 		t.Errorf("saved config: terminal %+v, rules %+v, sound %v", cfg.Terminal, r, cfg.Notifications.Sound)
+	}
+	if !cfg.ThisComputer {
+		t.Error("this computer should be checked (Enter = yes)")
 	}
 	key, err := vault.Unlock(paths.KeyFile, secret.Bytes(pass))
 	if err != nil {

@@ -53,11 +53,31 @@ func (w *wizard) run(res *initResult) error {
 			return err
 		}
 	}
-	if res.Unlocked && len(servers) > 0 {
+	res.ThisComputer = w.cfg.ThisComputer
+	if res.Service && (res.Unlocked || len(servers) == 0) && (len(servers) > 0 || w.cfg.ThisComputer) {
 		w.firstCheck()
 	}
 	return nil
 }
+
+// thisComputer asks whether to check the computer mis runs on, too.
+func (w *wizard) thisComputer() error {
+	a := w.a
+	what := "its packages, like a server's"
+	if runtime.GOOS == "darwin" {
+		what = "macOS and Safari updates with the vulnerabilities they fix, and Homebrew"
+	}
+	a.say("It can also check %s: %s. Nothing is installed or changed for that.\n", lower(config.LocalLabel()), what)
+	ok, err := a.confirm("Check "+lower(config.LocalLabel())+" too?", true)
+	if err != nil {
+		return err
+	}
+	w.cfg.ThisComputer = ok
+	return w.cfg.Save(w.paths.Config)
+}
+
+// lower lowercases the first letter: "This Mac" → "this Mac".
+func lower(s string) string { return strings.ToLower(s[:1]) + s[1:] }
 
 // close wipes the key the wizard unlocked for adding servers.
 func (w *wizard) close() {
@@ -150,7 +170,11 @@ func (w *wizard) askScore(question string, def float64, offOK bool) (float64, er
 
 func (w *wizard) servers() ([]string, error) {
 	a := w.a
-	a.say("\n4. Servers\nFor each server, a read-only \"mis\" user is created through your own ssh login.\n" +
+	a.say("\n4. Servers\n")
+	if err := w.thisComputer(); err != nil {
+		return nil, err
+	}
+	a.say("\nFor each server, a read-only \"mis\" user is created through your own ssh login.\n" +
 		"Have your usual `ssh` login ready (keys or password: Make-It-Safer never sees it).\n")
 	var added []string
 	for {
@@ -279,7 +303,7 @@ func (w *wizard) notifyTest() error {
 
 func (w *wizard) firstCheck() {
 	a := w.a
-	a.say("\n7. First check\nReading your servers' package lists and matching them (this can take a minute)…\n")
+	a.say("\n7. First check\nReading package lists and matching them (the first time can take a few minutes)…\n")
 	var res daemon.CheckResult
 	if err := daemon.Call(w.paths, daemon.Request{Op: daemon.OpCheck, Refresh: true}, &res, 10*time.Minute); err != nil {
 		a.say("✗ %s\n  Try again later: mis check\n", apperr.MessageOf(err))

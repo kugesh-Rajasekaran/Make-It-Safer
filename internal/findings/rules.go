@@ -33,6 +33,8 @@ func Classify(f *Finding, r config.Rules, now time.Time) Priority {
 		return Normal
 	case KindEarlyWarning:
 		return High
+	case KindUpdates: // no CVE data: shown in the weekly summary, never alone
+		return Normal
 	}
 
 	score := f.Score
