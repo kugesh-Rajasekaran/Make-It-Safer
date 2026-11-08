@@ -304,9 +304,12 @@ func (w *wizard) notifyTest() error {
 
 func (w *wizard) firstCheck() {
 	a := w.a
-	a.say("\n7. First check\nReading package lists and matching them (the first time can take a few minutes)…\n")
+	a.say("\n7. First check (the first one can take a few minutes)\n")
 	var res daemon.CheckResult
-	if err := daemon.Call(w.paths, daemon.Request{Op: daemon.OpCheck, Refresh: true}, &res, 10*time.Minute); err != nil {
+	err := a.withSpinner("Reading package lists and matching them", func() error {
+		return daemon.Call(w.paths, daemon.Request{Op: daemon.OpCheck, Refresh: true}, &res, 10*time.Minute)
+	})
+	if err != nil {
 		a.say("✗ %s\n  Try again later: mis check\n", apperr.MessageOf(err))
 		return
 	}

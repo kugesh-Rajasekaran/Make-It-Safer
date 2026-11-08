@@ -62,9 +62,12 @@ func (a *app) doctorCmd() *cobra.Command {
 				out, _ := exec.CommandContext(ctx, "systemctl", "--user", "show-environment").Output()
 				results = append(results, doctor.Desktop(strings.Split(string(out), "\n")))
 			}
-			a.say("Checking the data sources…\n")
-			results = append(results,
-				doctor.Reachable(ctx, feeds.New(version), doctor.Sources),
+			var reachable doctor.Result
+			_ = a.withSpinner("Checking the data sources", func() error {
+				reachable = doctor.Reachable(ctx, feeds.New(version), doctor.Sources)
+				return nil
+			})
+			results = append(results, reachable,
 				doctor.Servers(cfg.Checked(), st.Checked, time.Now()),
 				doctor.Data(status, time.Now()),
 			)

@@ -43,7 +43,9 @@ only matches the saved lists.`,
 			// The background service checks with its unlocked key, without asking again.
 			if daemon.Running(paths) {
 				var res engine.Result
-				err := daemon.Call(paths, daemon.Request{Op: daemon.OpCheck, Servers: names, Refresh: !noRefresh}, &res, 30*time.Minute)
+				err := a.withSpinner("Checking "+describe(servers), func() error {
+					return daemon.Call(paths, daemon.Request{Op: daemon.OpCheck, Servers: names, Refresh: !noRefresh}, &res, 30*time.Minute)
+				})
 				if err == nil {
 					return a.emit(&res, func(w io.Writer) { printCheck(w, &res) })
 				}
@@ -60,8 +62,11 @@ only matches the saved lists.`,
 				defer key.Destroy()
 				signer = key.Signer()
 			}
-			a.say("Checking %d server(s)…\n", len(servers))
-			res, err := engine.New(paths, cfg, version, a.log).Check(context.Background(), !noRefresh, signer, servers)
+			var res *engine.Result
+			err = a.withSpinner("Checking "+describe(servers), func() (err error) {
+				res, err = engine.New(paths, cfg, version, a.log).Check(context.Background(), !noRefresh, signer, servers)
+				return err
+			})
 			if err != nil {
 				return err
 			}
@@ -347,4 +352,25 @@ func (a *app) ackCmd() *cobra.Command {
 	cmd.Flags().StringVar(&until, "until", "", "snooze until this date (YYYY-MM-DD); without it the risk is accepted")
 	cmd.Flags().StringVar(&reason, "reason", "", "why, for your future self")
 	return cmd
+}
+
+// describe names what a check covers: "this Mac and web-1", or "4 servers".
+func describe(servers []config.Server) string {
+	names := make([]string, 0, len(servers))
+	for _, s := range servers {
+		if s.Local {
+			names = append(names, lower(config.LocalLabel()))
+		} else {
+			names = append(names, s.Name)
+		}
+	}
+	switch {
+	case len(names) > 3:
+		return fmt.Sprintf("%d servers", len(names))
+	case len(names) > 1:
+		return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
+	case len(names) == 1:
+		return names[0]
+	}
+	return "nothing"
 }
