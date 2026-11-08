@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/apperr"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/config"
@@ -44,11 +45,34 @@ func InstallService(paths config.Paths) (*ServiceInfo, error) {
 	if err := os.WriteFile(file, []byte(content), 0o644); err != nil { //nolint:gosec // launchd needs to read it; it holds no secrets
 		return nil, apperr.Wrap(apperr.ServiceInstallFailed, err, "cannot write "+file)
 	}
-	_, _ = run("launchctl", "bootout", guiDomain()+"/"+launchLabel) // not loaded yet is fine
-	if _, err := run("launchctl", "bootstrap", guiDomain(), file); err != nil {
-		return nil, err
+	stopAgent()
+	// launchd can still refuse right after a stop ("Input/output error"), so
+	// try a few times.
+	for attempt := 1; ; attempt++ {
+		_, err := run("launchctl", "bootstrap", guiDomain(), file)
+		if err == nil {
+			break
+		}
+		if attempt == 3 {
+			return nil, err
+		}
+		time.Sleep(time.Second)
 	}
 	return ServiceState(paths), nil
+}
+
+// stopAgent unloads the running service and waits until launchd has really
+// stopped it: bootout returns before that, and starting the new one too
+// early fails. Not loaded at all is fine.
+func stopAgent() {
+	target := guiDomain() + "/" + launchLabel
+	_, _ = run("launchctl", "bootout", target)
+	for range 50 {
+		if _, err := run("launchctl", "print", target); err != nil {
+			return // gone
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 // UninstallService stops the LaunchAgent and removes it.
@@ -57,7 +81,7 @@ func UninstallService(paths config.Paths) error {
 	if err != nil {
 		return err
 	}
-	_, _ = run("launchctl", "bootout", guiDomain()+"/"+launchLabel)
+	stopAgent()
 	if err := os.Remove(file); err != nil && !os.IsNotExist(err) {
 		return apperr.Wrap(apperr.ServiceInstallFailed, err, "cannot remove "+file)
 	}
