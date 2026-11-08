@@ -80,12 +80,27 @@ func (d *Daemon) Run(ctx context.Context) error {
 	return nil
 }
 
+// jobs are the background service's timers. Four follow schedule in
+// config.yaml (mis config › Checks); sending due notifications stays at 15 min.
 func (d *Daemon) jobs() []*job {
+	configured := func(pick func(config.Schedule) config.Duration) func() time.Duration {
+		return func() time.Duration {
+			cfg, err := config.Load(d.paths.Config)
+			if err != nil {
+				return 0 // the default
+			}
+			return time.Duration(pick(cfg.Schedule))
+		}
+	}
 	return []*job{
-		{name: "feeds", every: 30 * time.Minute, run: d.jobFeeds},
-		{name: "refresh", every: 12 * time.Hour, needsKey: true, run: d.jobRefresh},
-		{name: "match", every: 6 * time.Hour, run: d.jobMatch},
-		{name: "early", every: 15 * time.Minute, run: d.jobEarly},
+		{name: "feeds", every: 30 * time.Minute, run: d.jobFeeds,
+			interval: configured(func(s config.Schedule) config.Duration { return s.DataChanges })},
+		{name: "refresh", every: 12 * time.Hour, needsKey: true, run: d.jobRefresh,
+			interval: configured(func(s config.Schedule) config.Duration { return s.Servers })},
+		{name: "match", every: 6 * time.Hour, run: d.jobMatch,
+			interval: configured(func(s config.Schedule) config.Duration { return s.FullCheck })},
+		{name: "early", every: 15 * time.Minute, run: d.jobEarly,
+			interval: configured(func(s config.Schedule) config.Duration { return s.NewCVEs })},
 		{name: "remind", every: 15 * time.Minute, run: func(context.Context) error { return d.remind() }},
 	}
 }

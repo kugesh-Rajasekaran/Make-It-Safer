@@ -79,3 +79,26 @@ func TestSchedulerUsesWallClockTime(t *testing.T) {
 		}
 	}
 }
+
+// Intervals come from mis config; a shorter one applies right away.
+func TestSchedulerFollowsTheConfiguredInterval(t *testing.T) {
+	now := time.Date(2026, 11, 9, 9, 0, 0, 0, time.UTC)
+	every := 6 * time.Hour
+	runs := 0
+	jobs := []*job{{name: "match", every: time.Hour, interval: func() time.Duration { return every },
+		run: func(context.Context) error { runs++; return nil }}}
+	s := newScheduler(jobs, filepath.Join(t.TempDir(), "schedule.json"), func() time.Time { return now }, func() bool { return false },
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	s.runDue(context.Background())
+	if next := s.snapshot()["match"].Next; runs != 1 || !next.Equal(now.Add(6*time.Hour)) {
+		t.Fatalf("runs %d, next %v: want the configured 6h, not the 1h default", runs, next)
+	}
+
+	now = now.Add(45 * time.Minute)
+	every = 30 * time.Minute // shortened in mis config: overdue now
+	s.runDue(context.Background())
+	if runs != 2 {
+		t.Fatalf("a shorter interval should apply at once; runs = %d", runs)
+	}
+}

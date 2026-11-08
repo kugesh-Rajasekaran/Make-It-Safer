@@ -194,6 +194,10 @@ Make-It-Safer settings      ↑/↓ move · Enter change · q quit
 | `rules.unfixed` | `urgent_only` or `all` | Alert for vulnerabilities without a fix |
 | `rules.early_warning` | `9.0` or `off` | Heads-ups before your distro confirms |
 | `rules.remind.urgent` / `.high` / `.normal` | `4h` / `1d` / `7d` | How often open findings are repeated |
+| `schedule.new_cves` | `15m` (at least 5m) | How often to look for brand-new CVEs (early warnings) |
+| `schedule.data_changes` | `30m` (at least 10m) | How often to ask Debian, Ubuntu and CISA whether their data changed; if it did, everything is checked again |
+| `schedule.full_check` | `6h` (at least 30m) | How often to check everything again anyway, including this computer |
+| `schedule.servers` | `12h` (at least 1h) | How often to log in to your servers and read their installed packages (needs unlocked) |
 | `rules.ignore.packages` / `.cves` | `linux-firmware,tzdata` | Never alert for these |
 | `terminal.app` | `default`, `iterm2`, `ghostty`, …, `custom` | The app a server button opens |
 | `terminal.command` | `foot {script}` | Only for `custom` (set it first) |

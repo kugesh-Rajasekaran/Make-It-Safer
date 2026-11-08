@@ -25,9 +25,27 @@ type Config struct {
 	ThisComputer  bool          `yaml:"this_computer"` // also check the computer mis runs on
 	Servers       []Server      `yaml:"servers"`
 	Rules         Rules         `yaml:"rules"`
+	Schedule      Schedule      `yaml:"schedule"`
 	Terminal      Terminal      `yaml:"terminal"`
 	Notifications Notifications `yaml:"notifications"`
 }
+
+// Schedule sets how often the background service checks. Each has a
+// minimum (ScheduleMinimums) so the data sources aren't asked too often.
+type Schedule struct {
+	NewCVEs     Duration `yaml:"new_cves"`     // read brand-new CVEs from cve.org (early warnings)
+	DataChanges Duration `yaml:"data_changes"` // ask Debian, Ubuntu and CISA whether their data changed
+	FullCheck   Duration `yaml:"full_check"`   // match everything again; read this computer again
+	Servers     Duration `yaml:"servers"`      // log in to the servers and read their packages again
+}
+
+// ScheduleMinimums are the shortest allowed intervals, by YAML name.
+var ScheduleMinimums = map[string]time.Duration{
+	"new_cves": 5 * time.Minute, "data_changes": 10 * time.Minute, "full_check": 30 * time.Minute, "servers": time.Hour,
+}
+
+// maxInterval bounds every interval: checks must happen at least weekly.
+const maxInterval = 7 * 24 * time.Hour
 
 // Server is a VPS registered with Make-It-Safer, or this computer (Local).
 type Server struct {
@@ -137,6 +155,10 @@ func Default() Config {
 				High:   Duration(24 * time.Hour),
 				Normal: Duration(7 * 24 * time.Hour),
 			},
+		},
+		Schedule: Schedule{
+			NewCVEs: Duration(15 * time.Minute), DataChanges: Duration(30 * time.Minute),
+			FullCheck: Duration(6 * time.Hour), Servers: Duration(12 * time.Hour),
 		},
 		Terminal:      Terminal{App: "default"},
 		Notifications: Notifications{MaxButtons: 3, Sound: true},
@@ -271,6 +293,12 @@ func (c *Config) Validate() error {
 	for name, d := range map[string]Duration{"urgent": r.Remind.Urgent, "high": r.Remind.High, "normal": r.Remind.Normal} {
 		if time.Duration(d) < time.Minute {
 			add("rules.remind.%s must be at least 1m", name)
+		}
+	}
+	s := c.Schedule
+	for name, d := range map[string]Duration{"new_cves": s.NewCVEs, "data_changes": s.DataChanges, "full_check": s.FullCheck, "servers": s.Servers} {
+		if lowest := ScheduleMinimums[name]; time.Duration(d) < lowest || time.Duration(d) > maxInterval {
+			add("schedule.%s must be between %s and 7d", name, FormatDuration(lowest))
 		}
 	}
 

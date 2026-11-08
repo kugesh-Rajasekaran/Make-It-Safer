@@ -24,9 +24,20 @@ type JobState struct {
 
 type job struct {
 	name     string
-	every    time.Duration
-	needsKey bool // only runs while unlocked
+	every    time.Duration        // default interval
+	interval func() time.Duration // the configured one (schedule in config.yaml); 0 = every
+	needsKey bool                 // only runs while unlocked
 	run      func(ctx context.Context) error
+}
+
+// period is how long the job waits between runs.
+func (j *job) period() time.Duration {
+	if j.interval != nil {
+		if d := j.interval(); d > 0 {
+			return d
+		}
+	}
+	return j.every
 }
 
 // scheduler runs jobs one at a time when they are due.
@@ -93,8 +104,14 @@ func (s *scheduler) runDue(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
+		period := j.period()
 		s.mu.Lock()
 		st := s.state[j.name]
+		// A shorter interval set in mis config applies now, not after the
+		// old one ran out.
+		if st.Failures == 0 && !st.LastRun.IsZero() && st.LastRun.Add(period).Before(st.Next) {
+			st.Next = st.LastRun.Add(period)
+		}
 		due := !s.now().Before(st.Next)
 		s.mu.Unlock()
 		if !due || (j.needsKey && !s.hasKey()) {
@@ -112,11 +129,11 @@ func (s *scheduler) runDue(ctx context.Context) {
 		if err != nil {
 			st.Failures++
 			st.LastError = apperr.MessageOf(err)
-			st.Next = now.Add(min(j.every, time.Duration(1<<min(st.Failures, 4))*time.Minute))
+			st.Next = now.Add(min(period, time.Duration(1<<min(st.Failures, 4))*time.Minute))
 			s.log.Warn("job", "status", "error", "job", j.name, "error", err, "retry", st.Next)
 		} else {
 			st.Failures, st.LastError, st.LastOK = 0, "", now
-			st.Next = now.Add(j.every)
+			st.Next = now.Add(period)
 			s.log.Debug("job", "status", "success", "job", j.name)
 		}
 		s.mu.Unlock()

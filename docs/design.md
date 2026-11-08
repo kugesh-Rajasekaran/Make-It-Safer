@@ -191,6 +191,9 @@ The key is then pinned. A mismatch later blocks the connection and triggers an u
 | OS end-of-life | endoflife.date | With each match | No |
 | Early warning | CVE List `deltaLog.json` (its newest part, by byte range) + the new CVE records | 15 min | No |
 | Package lists | SSH → collector | Every 12 h, on unlock, and after a fix click | **Yes** |
+| This computer | Read directly (§4.10); on a Mac, Apple security notes | With each match | No |
+
+The four timers are settings (`schedule` in config.yaml, **Checks** in `mis config`), each with a minimum so the sources aren't asked too often: new CVEs ≥ 5 min, data changes ≥ 10 min, full check ≥ 30 min, servers ≥ 1 h (all ≤ 7 days). A shorter value applies within a minute. Sending due notifications stays every 15 min.
 
 **Ecosystem mapping:**
 
