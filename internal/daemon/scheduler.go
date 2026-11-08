@@ -43,7 +43,11 @@ type scheduler struct {
 }
 
 func newScheduler(jobs []*job, path string, now func() time.Time, hasKey func() bool, log *slog.Logger) *scheduler {
-	s := &scheduler{jobs: jobs, path: path, now: now, hasKey: hasKey, log: log, wake: make(chan struct{}, 1), state: map[string]*JobState{}}
+	// Schedule by wall-clock time. Go's monotonic clock stops while the
+	// computer sleeps, so a job due during the night would otherwise wait
+	// for hours of awake time instead of running right after wake-up.
+	wall := func() time.Time { return now().Round(0) }
+	s := &scheduler{jobs: jobs, path: path, now: wall, hasKey: hasKey, log: log, wake: make(chan struct{}, 1), state: map[string]*JobState{}}
 	if data, err := os.ReadFile(path); err == nil { //nolint:gosec // path is in our state dir
 		_ = json.Unmarshal(data, &s.state)
 	}

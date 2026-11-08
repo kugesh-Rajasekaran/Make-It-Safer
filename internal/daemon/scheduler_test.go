@@ -64,3 +64,18 @@ func TestSchedulerRunsDueJobsAndBacksOff(t *testing.T) {
 		t.Fatalf("after restart: %v", runs)
 	}
 }
+
+// The real clock carries a monotonic reading that stops while the computer
+// sleeps. The scheduler must compare wall-clock times only, or jobs due
+// during sleep wait for hours of awake time.
+func TestSchedulerUsesWallClockTime(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	jobs := []*job{{name: "feeds", every: time.Minute, run: func(context.Context) error { return nil }}}
+	s := newScheduler(jobs, filepath.Join(t.TempDir(), "schedule.json"), time.Now, func() bool { return false }, log)
+	s.runDue(context.Background())
+	for _, tm := range []time.Time{s.now(), s.snapshot()["feeds"].Next, s.snapshot()["feeds"].LastOK} {
+		if strings.Contains(tm.String(), "m=") {
+			t.Fatalf("%v carries a monotonic reading, which stops during sleep", tm)
+		}
+	}
+}
