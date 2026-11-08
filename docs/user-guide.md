@@ -7,6 +7,7 @@ Make-It-Safer (`mis`) watches your Ubuntu and Debian servers for vulnerabilities
 - [Daily use](#daily-use)
 - [Fixing](#fixing)
 - [After a restart: unlock](#after-a-restart-unlock)
+- [This computer](#this-computer)
 - [Servers](#servers)
 - [Settings](#settings)
 - [Removing Make-It-Safer](#removing-make-it-safer)
@@ -47,9 +48,9 @@ Run `mis init` and follow the steps. Every step after the passphrase can be skip
 | 1. Passphrase | Choose one (at least 8 characters), or press Enter for a generated one. **It's never saved anywhere: keep it in your password manager.** It encrypts the key Make-It-Safer uses to read your servers. |
 | 2. Terminal | The app that opens when you click a server button. `default` is Terminal on macOS, your desktop's terminal on Linux. |
 | 3. Alerts | The CVSS score from which fixable vulnerabilities alert you (default 7), and from which early warnings come (default 9, or `off`). |
-| 4. Servers | Adds your servers (see [Servers](#servers)). |
-| 5. Background service | Starts at every login and checks on a schedule. It's unlocked with the passphrase from step 1. On macOS you're then asked **"Unlock automatically when you log in?"** (Enter = yes): see [auto-unlock](#after-a-restart-unlock). |
-| 6. Notifications | Shows a test notification. On macOS, allow notifications for **Make-It-Safer Notifier** and choose the **Alerts** style, so they stay on screen. |
+| 4. Servers | First: **"Check this Mac too?"** (Enter = yes; on Linux "this computer"), see [This computer](#this-computer). Then adds your servers (see [Servers](#servers)). |
+| 5. Background service | Starts at every login and checks on a schedule. It's unlocked with the passphrase from step 1. On macOS you're then asked **"Unlock automatically after a restart?"** (Enter = yes; your passphrase is never stored): see [auto-unlock](#after-a-restart-unlock). |
+| 6. Notifications | On macOS it opens **System Settings › Notifications › Make-It-Safer Notifier** for you: turn on *Allow notifications*, choose **Alerts** (they stay on screen), press Enter. It checks, and opens it again if something's still off. Then it shows a test notification. Later, the same with `mis notify setup`. |
 | 7. First check | Reads each server's package list and shows what's open. |
 
 When it's done, `mis doctor` should be all green (✓).
@@ -127,6 +128,22 @@ After you restart your computer, the service starts **locked**: it keeps matchin
 
 ---
 
+## This computer
+
+`mis` can check the computer it runs on too. Nothing is installed or changed for it, and it's checked even while the service is locked.
+
+| | Mac | Linux desktop (Ubuntu, Debian) |
+|---|---|---|
+| Finds | Every vulnerability fixed by the macOS and Safari updates Apple offers you (from Apple's security notes), with the same urgency rules as servers | The same as on a server |
+| Also | macOS end of support; outdated Homebrew packages (weekly summary) | Release end of support |
+| Notification | One per update: "macOS 15.8.2 · fixes 197 vulnerabilities · 2 actively exploited" | One per vulnerability |
+| Button | **This Mac** opens System Settings › Software Update | **This computer** opens a terminal with the fix typed in |
+
+- It appears as `this-mac` (Linux: `this-computer`) in `mis status`, `mis findings` and `mis show`. `mis check this-mac` checks just it; `mis fix this-mac` does what the button does.
+- Turn it on or off in `mis config` ("Also check this Mac") or with `mis config set this_computer yes|no`.
+
+---
+
 ## Servers
 
 | Command | Does |
@@ -170,12 +187,17 @@ Make-It-Safer settings      ↑/↓ move · Enter change · q quit
 
 | Name | Example value | Means |
 |---|---|---|
+| `this_computer` | `yes` | Also check the computer `mis` runs on |
 | `rules.alert_when.min_severity` | `7.0` | Alert for fixable vulnerabilities from this CVSS score |
 | `rules.alert_when.min_epss` | `10%` | …or from this exploit chance |
 | `rules.alert_when.actively_exploited` | `yes` | Always alert for CISA's actively-exploited list |
 | `rules.unfixed` | `urgent_only` or `all` | Alert for vulnerabilities without a fix |
 | `rules.early_warning` | `9.0` or `off` | Heads-ups before your distro confirms |
 | `rules.remind.urgent` / `.high` / `.normal` | `4h` / `1d` / `7d` | How often open findings are repeated |
+| `schedule.new_cves` | `15m` (at least 5m) | How often to look for brand-new CVEs (early warnings) |
+| `schedule.data_changes` | `30m` (at least 10m) | How often to ask Debian, Ubuntu and CISA whether their data changed; if it did, everything is checked again |
+| `schedule.full_check` | `6h` (at least 30m) | How often to check everything again anyway, including this computer |
+| `schedule.servers` | `12h` (at least 1h) | How often to log in to your servers and read their installed packages (needs unlocked) |
 | `rules.ignore.packages` / `.cves` | `linux-firmware,tzdata` | Never alert for these |
 | `terminal.app` | `default`, `iterm2`, `ghostty`, …, `custom` | The app a server button opens |
 | `terminal.command` | `foot {script}` | Only for `custom` (set it first) |
@@ -201,7 +223,7 @@ Start with **`mis doctor`**: it checks everything and says what to do.
 
 | Problem | What to do |
 |---|---|
-| No notifications (macOS) | `make install` puts the helper in `~/Applications`. Then System Settings → Notifications → **Make-It-Safer Notifier**: allow, and choose **Alerts**. Test with `mis notify test`. |
+| No notifications (macOS) | `mis notify setup`: it opens the right page in System Settings, checks the result and shows a test. (The helper app lives in `~/Applications`; `make install` puts it there.) |
 | No notifications (Linux) | Your desktop needs a notification service (GNOME and KDE have one). Test with `mis notify test`. |
 | A button does nothing | Check the terminal in `mis doctor`. On Linux, the service may not see your desktop: `systemctl --user import-environment DISPLAY WAYLAND_DISPLAY DBUS_SESSION_BUS_ADDRESS`, then `mis service install`. |
 | "locked" | `mis unlock` |

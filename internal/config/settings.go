@@ -89,7 +89,11 @@ func Lookup(key string) (Setting, bool) {
 // Settings lists everything mis config can change, in screen order.
 func Settings() []Setting {
 	r := func(c *Config) *Rules { return &c.Rules }
+	thisComputer := toggle("this_computer", "Also check "+strings.ToLower(LocalLabel()[:1])+LocalLabel()[1:],
+		func(c *Config) *bool { return &c.ThisComputer })
+	thisComputer.Group = "Devices"
 	return []Setting{
+		thisComputer,
 		{Key: "rules.alert_when.min_severity", Group: "Alerts", Label: "Alert for fixable vulnerabilities from CVSS",
 			Question: "CVSS score (0–10)",
 			value:    func(c *Config) string { return score(r(c).AlertWhen.MinSeverity) },
@@ -139,6 +143,11 @@ func Settings() []Setting {
 		remind("rules.remind.urgent", "Reminders", "Remind urgent findings", func(c *Config) *Duration { return &r(c).Remind.Urgent }),
 		remind("rules.remind.high", "", "Remind high findings", func(c *Config) *Duration { return &r(c).Remind.High }),
 		remind("rules.remind.normal", "", "Summary of normal findings", func(c *Config) *Duration { return &r(c).Remind.Normal }),
+		check("new_cves", "Checks", "Look for brand-new CVEs (early warnings)", func(c *Config) *Duration { return &c.Schedule.NewCVEs }),
+		check("data_changes", "", "Look for new data from Debian, Ubuntu, CISA", func(c *Config) *Duration { return &c.Schedule.DataChanges }),
+		check("full_check", "", "Check everything again, incl. "+strings.ToLower(LocalLabel()[:1])+LocalLabel()[1:],
+			func(c *Config) *Duration { return &c.Schedule.FullCheck }),
+		check("servers", "", "Read your servers' installed packages", func(c *Config) *Duration { return &c.Schedule.Servers }),
 		list("rules.ignore.packages", "Ignore", "Never alert for these packages", "Packages, separated by commas (empty for none)", false,
 			func(c *Config) *[]string { return &r(c).Ignore.Packages }),
 		list("rules.ignore.cves", "", "Never alert for these CVEs", "CVE IDs, separated by commas (empty for none)", true,
@@ -188,13 +197,24 @@ func toggle(key, label string, field func(*Config) *bool) Setting {
 }
 
 func remind(key, group, label string, field func(*Config) *Duration) Setting {
-	return Setting{Key: key, Group: group, Label: label, Question: "Every (e.g. 30m, 4h, 1d)",
-		value: func(c *Config) string { return FormatDuration(time.Duration(*field(c))) },
-		show:  func(c *Config) string { return "every " + FormatDuration(time.Duration(*field(c))) },
+	return interval(key, group, label, time.Minute, field)
+}
+
+// check is one of the background service's timers (schedule.<name>).
+func check(name, group, label string, field func(*Config) *Duration) Setting {
+	return interval("schedule."+name, group, label, ScheduleMinimums[name], field)
+}
+
+// interval is a duration setting of at least lowest, shown as "every 4h".
+func interval(key, group, label string, lowest time.Duration, field func(*Config) *Duration) Setting {
+	return Setting{Key: key, Group: group, Label: label,
+		Question: fmt.Sprintf("Every (at least %s, e.g. 30m, 4h, 1d)", FormatDuration(lowest)),
+		value:    func(c *Config) string { return FormatDuration(time.Duration(*field(c))) },
+		show:     func(c *Config) string { return "every " + FormatDuration(time.Duration(*field(c))) },
 		set: func(c *Config, v string) error {
 			d, err := ParseDuration(v)
-			if err != nil || d < time.Minute {
-				return fmt.Errorf("use a duration of at least 1m, like 30m, 4h or 1d")
+			if err != nil || d < lowest {
+				return fmt.Errorf("use a duration of at least %s, like 30m, 4h or 1d", FormatDuration(lowest))
 			}
 			*field(c) = Duration(d)
 			return nil

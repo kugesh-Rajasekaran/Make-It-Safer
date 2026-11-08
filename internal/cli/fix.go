@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -52,7 +53,14 @@ is combined into one command.`,
 				return err
 			}
 			return a.emit(map[string]string{"opened": args[0]}, func(w io.Writer) {
-				_, _ = fmt.Fprintf(w, "✓ Opened an SSH session to %s in your terminal.\n", args[0])
+				switch {
+				case args[0] != config.LocalName():
+					_, _ = fmt.Fprintf(w, "✓ Opened an SSH session to %s in your terminal.\n", args[0])
+				case runtime.GOOS == "darwin":
+					_, _ = fmt.Fprintln(w, "✓ Opened System Settings › Software Update.")
+				default:
+					_, _ = fmt.Fprintln(w, "✓ Opened the fix for this computer in your terminal.")
+				}
 			})
 		},
 	}
@@ -116,6 +124,24 @@ func (a *app) pickCmd() *cobra.Command {
 func (a *app) notifyCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "notify", Short: "Desktop notifications", Args: cobra.NoArgs}
 	cmd.AddCommand(&cobra.Command{
+		Use:   "setup",
+		Short: "Allow notifications (opens System Settings on macOS), then show a test",
+		Args:  cobra.NoArgs,
+		RunE: func(*cobra.Command, []string) error {
+			paths, _, err := a.setup()
+			if err != nil {
+				return err
+			}
+			if !daemon.Running(paths) {
+				return apperr.New(apperr.DaemonNotRunning, "the background service is not running; start it with: mis service install")
+			}
+			ready, err := a.setUpNotifications(paths)
+			if err != nil {
+				return err
+			}
+			return a.emit(map[string]bool{"ready": ready}, func(io.Writer) {})
+		},
+	}, &cobra.Command{
 		Use: "test", Short: "Show a test notification with buttons", Args: cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
 			paths, _, err := a.setup()

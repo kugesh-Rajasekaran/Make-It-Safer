@@ -13,6 +13,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/apperr"
+	"github.com/kugesh-rajasekaran/make-it-safer/internal/config"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/daemon"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/engine"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/findings"
@@ -24,23 +25,27 @@ func (a *app) checkCmd() *cobra.Command {
 	var noRefresh bool
 	cmd := &cobra.Command{
 		Use:   "check [server...]",
-		Short: "Check your servers now: refresh package lists and match them",
+		Short: "Check your servers (and this computer) now: refresh package lists and match them",
 		Long: `Logs in to each server as the read-only mis user to refresh its package
-list (asks for your passphrase), then matches all lists against the latest
-vulnerability data. With --no-refresh it only matches the saved lists.`,
+list (asks for your passphrase) and reads this computer's directly, then
+matches all lists against the latest vulnerability data. With --no-refresh it
+only matches the saved lists.`,
 		RunE: func(_ *cobra.Command, names []string) error {
 			paths, cfg, err := a.setup()
 			if err != nil {
 				return err
 			}
-			servers, err := pick(cfg, names)
+			servers, err := pick(cfg, names, true)
 			if err != nil {
 				return err
 			}
+			needKey := !noRefresh && slices.ContainsFunc(servers, func(s config.Server) bool { return !s.Local })
 			// The background service checks with its unlocked key, without asking again.
 			if daemon.Running(paths) {
 				var res engine.Result
-				err := daemon.Call(paths, daemon.Request{Op: daemon.OpCheck, Servers: names, Refresh: !noRefresh}, &res, 30*time.Minute)
+				err := a.withSpinner("Checking "+describe(servers), func() error {
+					return daemon.Call(paths, daemon.Request{Op: daemon.OpCheck, Servers: names, Refresh: !noRefresh}, &res, 30*time.Minute)
+				})
 				if err == nil {
 					return a.emit(&res, func(w io.Writer) { printCheck(w, &res) })
 				}
@@ -49,7 +54,7 @@ vulnerability data. With --no-refresh it only matches the saved lists.`,
 				}
 			}
 			var signer ssh.Signer
-			if !noRefresh {
+			if needKey {
 				key, err := a.unlockKey(paths)
 				if err != nil {
 					return err
@@ -57,8 +62,11 @@ vulnerability data. With --no-refresh it only matches the saved lists.`,
 				defer key.Destroy()
 				signer = key.Signer()
 			}
-			a.say("Checking %d server(s)…\n", len(servers))
-			res, err := engine.New(paths, cfg, version, a.log).Check(context.Background(), signer, servers)
+			var res *engine.Result
+			err = a.withSpinner("Checking "+describe(servers), func() (err error) {
+				res, err = engine.New(paths, cfg, version, a.log).Check(context.Background(), !noRefresh, signer, servers)
+				return err
+			})
 			if err != nil {
 				return err
 			}
@@ -90,8 +98,12 @@ func printCheck(w io.Writer, res *engine.Result) {
 	if len(changed) > 0 {
 		_, _ = fmt.Fprintln(w, "\nNew or more urgent:")
 		sortFindings(changed)
-		for _, f := range changed {
+		const shown = 20 // most urgent first; a Mac's first check can find hundreds
+		for _, f := range changed[:min(len(changed), shown)] {
 			_, _ = fmt.Fprintln(w, "  "+line(f))
+		}
+		if len(changed) > shown {
+			_, _ = fmt.Fprintf(w, "  … and %d more\n", len(changed)-shown)
 		}
 	}
 	if len(res.Changes.Resolved) > 0 {
@@ -271,7 +283,13 @@ func (a *app) showCmd() *cobra.Command {
 					_, _ = fmt.Fprintln(w, "\nEarly warnings come from the CVE List before your distro has assessed the CVE.\n"+
 						"They're matched by product name, so they may not apply. The distro's verdict replaces them.")
 				}
-				_, _ = fmt.Fprintf(w, "\nMore: https://www.cve.org/CVERecord?id=%s · https://ubuntu.com/security/%s · https://security-tracker.debian.org/tracker/%s\n", cve, cve, cve)
+				_, _ = fmt.Fprintf(w, "\nMore: https://www.cve.org/CVERecord?id=%s", cve)
+				if slices.ContainsFunc(matches, func(m *findings.Finding) bool { return m.Source != "macos" && m.Source != "safari" }) {
+					_, _ = fmt.Fprintf(w, " · https://ubuntu.com/security/%s · https://security-tracker.debian.org/tracker/%s", cve, cve)
+				} else {
+					_, _ = fmt.Fprint(w, " · https://support.apple.com/en-us/100100")
+				}
+				_, _ = fmt.Fprintln(w)
 			})
 		},
 	}
@@ -334,4 +352,25 @@ func (a *app) ackCmd() *cobra.Command {
 	cmd.Flags().StringVar(&until, "until", "", "snooze until this date (YYYY-MM-DD); without it the risk is accepted")
 	cmd.Flags().StringVar(&reason, "reason", "", "why, for your future self")
 	return cmd
+}
+
+// describe names what a check covers: "this Mac and web-1", or "4 servers".
+func describe(servers []config.Server) string {
+	names := make([]string, 0, len(servers))
+	for _, s := range servers {
+		if s.Local {
+			names = append(names, lower(config.LocalLabel()))
+		} else {
+			names = append(names, s.Name)
+		}
+	}
+	switch {
+	case len(names) > 3:
+		return fmt.Sprintf("%d servers", len(names))
+	case len(names) > 1:
+		return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
+	case len(names) == 1:
+		return names[0]
+	}
+	return "nothing"
 }

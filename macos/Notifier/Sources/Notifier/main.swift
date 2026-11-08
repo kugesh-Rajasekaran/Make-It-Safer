@@ -4,8 +4,12 @@
 // It connects to the service's Unix socket (the first argument, or
 // ~/Library/Application Support/MakeItSafer/notify.sock) and exchanges one
 // JSON message per line:
-//   from the service: {"op":"show", id, title, body, buttons, sound} and {"op":"remove", id}
+//   from the service: {"op":"show", id, title, body, buttons, sound}, {"op":"remove", id}
+//                     and {"op":"settings"} (report the current permission now)
 //   to the service:   {"op":"action", id, action} and {"op":"settings", authorized, alertStyle}
+//
+// The permission is reported on connect, on request and after every
+// notification, so a change in System Settings is seen without a restart.
 //
 // macOS closes a notification when you click one of its buttons; the
 // service then shows it again with a ✓ on that server.
@@ -133,6 +137,9 @@ final class Bridge: NSObject, UNUserNotificationCenterDelegate {
         switch message.op {
         case "show":
             show(message)
+            reportSettings()
+        case "settings":
+            reportSettings()
         case "remove":
             if let id = message.id {
                 center.removeDeliveredNotifications(withIdentifiers: [id])

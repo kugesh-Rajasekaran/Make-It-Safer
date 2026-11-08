@@ -46,6 +46,7 @@ install: build
 ifeq ($(OS),Darwin)
 	./macos/build.sh
 	mkdir -p "$(HOME)/Applications"
+	-@pkill -f "$(HOME)/Applications/$(HELPER)/Contents/MacOS/Notifier" 2>/dev/null # the service starts the new one
 	rm -rf "$(HOME)/Applications/$(HELPER)"
 	cp -R "macos/build/$(HELPER)" "$(HOME)/Applications/"
 endif

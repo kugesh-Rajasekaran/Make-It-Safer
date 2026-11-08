@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -91,8 +92,9 @@ func TestScreenScrollsTenRowsAtATime(t *testing.T) {
 	}
 	value := func(screenRow) string { return "v" }
 
+	hidden := len(s.rows) - screenRows
 	first := s.render(value, "")
-	if !strings.Contains(first, "› ") || strings.Contains(first, "↑ ") || !strings.Contains(first, "↓ 4 more") {
+	if !strings.Contains(first, "› ") || strings.Contains(first, "↑ ") || !strings.Contains(first, fmt.Sprintf("↓ %d more", hidden)) {
 		t.Fatalf("first screen:\n%s", first)
 	}
 	if got := strings.Count(first, " v\r\n"); got != screenRows {
@@ -105,7 +107,7 @@ func TestScreenScrollsTenRowsAtATime(t *testing.T) {
 	if s.cur != screenRows || s.top != 1 {
 		t.Fatalf("cur %d top %d, want %d and 1", s.cur, s.top, screenRows)
 	}
-	if out := s.render(value, ""); !strings.Contains(out, "↑ 1 more") || !strings.Contains(out, "↓ 3 more") {
+	if out := s.render(value, ""); !strings.Contains(out, "↑ 1 more") || !strings.Contains(out, fmt.Sprintf("↓ %d more", hidden-1)) {
 		t.Fatalf("scrolled screen:\n%s", out)
 	}
 

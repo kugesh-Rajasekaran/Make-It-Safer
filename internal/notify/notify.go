@@ -6,6 +6,7 @@ package notify
 import (
 	"log/slog"
 	"strings"
+	"time"
 )
 
 // Button is an action on a notification, e.g. one per affected server.
@@ -42,6 +43,12 @@ type Notifier interface {
 	Describe() string // for mis status, e.g. "macOS (Alerts style)"
 	Ready() bool      // notifications appear on screen and stay there
 	Close() error
+}
+
+// Rechecker is a Notifier that can ask again whether notifications are
+// allowed (the macOS helper: you may have changed it in System Settings).
+type Rechecker interface {
+	Recheck(timeout time.Duration)
 }
 
 // Log is a Notifier that only writes to the log. It's used when there is

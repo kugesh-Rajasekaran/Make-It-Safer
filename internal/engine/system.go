@@ -44,18 +44,19 @@ func rebootFinding(server string, inv *inventory.Inventory) *findings.Finding {
 	}
 }
 
-// eolFinding reports a release whose security support has ended.
-func eolFinding(server string, inv *inventory.Inventory, cycles []eol.Cycle, now time.Time) *findings.Finding {
-	status, until := eol.StatusOf(cycles, inv.OSVersion, now)
-	name := map[string]string{"ubuntu": "Ubuntu", "debian": "Debian"}[inv.OSID] + " " + inv.OSVersion
+// eolFinding reports a release whose security support has ended. release is
+// the cycle endoflife.date uses: "24.04", "12", or macOS's major version.
+func eolFinding(server, osID, release string, cycles []eol.Cycle, now time.Time) *findings.Finding {
+	status, until := eol.StatusOf(cycles, release, now)
+	name := map[string]string{"ubuntu": "Ubuntu", "debian": "Debian", "macos": "macOS"}[osID] + " " + release
 	f := &findings.Finding{
-		ID: findings.MakeID(server, findings.KindEndOfLife, inv.OSID+"-"+inv.OSVersion), Server: server,
+		ID: findings.MakeID(server, findings.KindEndOfLife, osID+"-"+release), Server: server,
 		Kind: findings.KindEndOfLife, Installed: name,
 	}
 	switch {
 	case status == eol.Unsupported:
 		f.Priority, f.Summary = findings.Urgent, fmt.Sprintf("%s stopped receiving security updates on %s; upgrade to a supported release", name, until.Format("2006-01-02"))
-	case status == eol.ExtendedOnly && inv.OSID == "ubuntu":
+	case status == eol.ExtendedOnly && osID == "ubuntu":
 		f.Priority, f.Summary = findings.High, fmt.Sprintf("%s's standard support has ended; security fixes now need Ubuntu Pro (until %s)", name, until.Format("2006-01-02"))
 	case status == eol.ExtendedOnly:
 		f.Priority, f.Summary = findings.High, fmt.Sprintf("%s's regular security support has ended; Debian LTS covers it until %s", name, until.Format("2006-01-02"))

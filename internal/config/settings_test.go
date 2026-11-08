@@ -82,6 +82,11 @@ func TestSetAndShow(t *testing.T) {
 
 func TestSetRejectsAndLeavesConfigUnchanged(t *testing.T) {
 	cases := []struct{ key, in, reason string }{
+		{"schedule.new_cves", "1m", "at least 5m"},
+		{"schedule.data_changes", "5m", "at least 10m"},
+		{"schedule.full_check", "10m", "at least 30m"},
+		{"schedule.servers", "30m", "at least 1h"},
+		{"schedule.servers", "30d", "between 1h and 7d"},
 		{"rules.alert_when.min_severity", "11", "0 to 10"},
 		{"rules.alert_when.min_severity", "high", "0 to 10"},
 		{"rules.alert_when.min_epss", "150%", "0 to 100"},

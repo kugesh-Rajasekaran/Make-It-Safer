@@ -179,7 +179,7 @@ func (a *app) serverVerifyCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			servers, err := pick(cfg, names)
+			servers, err := pick(cfg, names, false)
 			if err != nil {
 				return err
 			}
@@ -362,21 +362,26 @@ func (a *app) serverScriptCmd() *cobra.Command {
 	}
 }
 
-// pick returns the named servers, or all of them when names is empty.
-func pick(cfg *config.Config, names []string) ([]config.Server, error) {
+// pick returns the named servers, or all of them when names is empty. With
+// withThisComputer, this computer counts too (when this_computer is on).
+func pick(cfg *config.Config, names []string, withThisComputer bool) ([]config.Server, error) {
+	all := cfg.Servers
+	if withThisComputer {
+		all = cfg.Checked()
+	}
 	if len(names) == 0 {
-		if len(cfg.Servers) == 0 {
+		if len(all) == 0 {
 			return nil, apperr.New(apperr.ServerNotFound, "no servers yet; add one with: mis server add")
 		}
-		return cfg.Servers, nil
+		return all, nil
 	}
 	var out []config.Server
 	for _, n := range names {
-		s, ok := cfg.Server(n)
-		if !ok {
+		i := slices.IndexFunc(all, func(s config.Server) bool { return s.Name == n })
+		if i < 0 {
 			return nil, apperr.New(apperr.ServerNotFound, "no server named "+strconv.Quote(n)+"; see: mis server list")
 		}
-		out = append(out, s)
+		out = append(out, all[i])
 	}
 	return out, nil
 }

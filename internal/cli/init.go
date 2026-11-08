@@ -16,12 +16,13 @@ import (
 )
 
 type initResult struct {
-	Home       string   `json:"home"`
-	PublicKey  string   `json:"public_key"`
-	Servers    []string `json:"servers"`
-	Service    bool     `json:"service"`     // the background service runs
-	Unlocked   bool     `json:"unlocked"`    // and is unlocked
-	AutoUnlock bool     `json:"auto_unlock"` // it unlocks itself when you log in
+	Home         string   `json:"home"`
+	PublicKey    string   `json:"public_key"`
+	Servers      []string `json:"servers"`
+	ThisComputer bool     `json:"this_computer"` // this computer is checked too
+	Service      bool     `json:"service"`       // the background service runs
+	Unlocked     bool     `json:"unlocked"`      // and is unlocked
+	AutoUnlock   bool     `json:"auto_unlock"`   // it unlocks itself when you log in
 }
 
 func (a *app) initCmd() *cobra.Command {

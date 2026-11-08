@@ -56,7 +56,7 @@ func (d *Daemon) alert(res *engine.Result) {
 				}
 			}
 			_ = d.notifier.Show(notify.Notification{
-				ID: "baseline:" + s.Server, Title: s.Server + " is now monitored",
+				ID: "baseline:" + s.Server, Title: serverLabel(s.Server) + " is now monitored",
 				Body: "Open now: " + summaryCounts(s.Open) + ". Click to see them.",
 			})
 		}
@@ -165,7 +165,7 @@ func (d *Daemon) remind() error {
 			st.Notes[summaryID] = now
 		}
 
-		if last := d.sched.lastOK("match"); len(cfg.Servers) > 0 && !last.IsZero() && now.Sub(last) > staleAfter && now.Sub(st.Notes[staleID]) > staleAfter {
+		if last := d.sched.lastOK("match"); len(cfg.Checked()) > 0 && !last.IsZero() && now.Sub(last) > staleAfter && now.Sub(st.Notes[staleID]) > staleAfter {
 			_ = d.notifier.Show(notify.Notification{ID: staleID, Title: "Vulnerability data is getting old",
 				Body: fmt.Sprintf("The last successful check was %s ago. Check your internet connection, or run: mis check", now.Sub(last).Round(time.Hour))})
 			st.Notes[staleID] = now
@@ -190,6 +190,21 @@ func (d *Daemon) groupNotification(key string, group []*findings.Finding, fixed 
 	slices.Sort(servers)
 	n := notify.Notification{ID: key, Urgent: top == findings.Urgent, Sound: cfg.Notifications.Sound}
 	if len(group) == 0 {
+		return n
+	}
+	if isApple(group[0]) { // one notification per Apple update, not per CVE
+		exploited := 0
+		for _, f := range group {
+			if f.KEV {
+				exploited++
+			}
+		}
+		n.Title = fmt.Sprintf("%s %s · fixes %d %s", icons[top], appleUpdate(group[0]), len(group), pluralWord(len(group), "vulnerability", "vulnerabilities"))
+		if exploited > 0 {
+			n.Title += fmt.Sprintf(" · %d actively exploited", exploited)
+		}
+		n.Body = "Install it in System Settings › Software Update."
+		n.Buttons = []notify.Button{{ID: "fix:" + group[0].Server, Title: config.LocalLabel()}}
 		return n
 	}
 	n.Title = icons[top] + " " + title(group[0])
@@ -236,7 +251,7 @@ func (d *Daemon) groupNotification(key string, group []*findings.Finding, fixed 
 		shown = 1
 	}
 	for _, s := range servers[:shown] {
-		label := s
+		label := serverLabel(s)
 		if clicked[s] {
 			label += " ✓"
 		}
@@ -251,20 +266,52 @@ func (d *Daemon) groupNotification(key string, group []*findings.Finding, fixed 
 func title(f *findings.Finding) string {
 	switch f.Kind {
 	case findings.KindReboot:
-		return f.Server + " needs a restart"
+		return serverLabel(f.Server) + " needs a restart"
 	case findings.KindEndOfLife:
-		return f.Server + ": " + f.Installed + " support ended"
+		return serverLabel(f.Server) + ": " + f.Installed + " support ended"
+	case findings.KindUpdates:
+		return serverLabel(f.Server) + ": " + f.Installed + " packages"
 	}
 	return f.CVE + " · " + f.Source
 }
 
-// groupKey: one notification per CVE (early warnings separately), or per
-// server for restarts and end of support.
+// serverLabel is how notifications name a server; this computer is "This Mac".
+func serverLabel(server string) string {
+	if server == config.LocalName() {
+		return config.LocalLabel()
+	}
+	return server
+}
+
+// isApple reports a vulnerability on this Mac, found in Apple's notes.
+func isApple(f *findings.Finding) bool {
+	return f.Kind == findings.KindVulnerability && f.Server == config.LocalName() && (f.Source == "macos" || f.Source == "safari")
+}
+
+// appleUpdate names the update that fixes an Apple finding, e.g. "macOS 15.8.2".
+func appleUpdate(f *findings.Finding) string {
+	if f.Source == "safari" {
+		return "Safari " + f.Fixed
+	}
+	return "macOS " + f.Fixed
+}
+
+func pluralWord(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
+}
+
+// groupKey: one notification per CVE (early warnings separately), per Apple
+// update on this Mac, or per server for restarts, end of support and updates.
 func groupKey(f *findings.Finding) string {
-	switch f.Kind {
-	case findings.KindVulnerability:
+	switch {
+	case isApple(f):
+		return "apple:" + f.Source + "-" + f.Fixed
+	case f.Kind == findings.KindVulnerability:
 		return "cve:" + f.CVE
-	case findings.KindEarlyWarning:
+	case f.Kind == findings.KindEarlyWarning:
 		return string(f.Kind) + ":" + f.CVE
 	}
 	return string(f.Kind) + ":" + f.Server

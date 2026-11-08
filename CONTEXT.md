@@ -8,6 +8,10 @@ The shared vocabulary for Make-It-Safer. Use these terms in code, docs, notifica
 A VPS the user registered with `mis` (OVH or any other provider).
 _Avoid_: host, node, box, machine
 
+**This computer**:
+Your computer, when it's checked too (`this_computer`). Named `this-mac` (Linux: `this-computer`) in Findings; read directly, no `mis` user or SSH. On a Mac its Vulnerabilities come from Apple's security notes.
+_Avoid_: host device, local server
+
 **Your computer**:
 The user's macOS or Linux desktop where `mis` and the Daemon run.
 _Avoid_: client, local host, laptop (when speaking generally)

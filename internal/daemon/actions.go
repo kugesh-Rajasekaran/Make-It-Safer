@@ -2,9 +2,12 @@ package daemon
 
 import (
 	"os"
+	"os/exec"
 	"slices"
 	"strings"
 	"time"
+
+	"golang.org/x/crypto/ssh"
 
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/apperr"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/config"
@@ -25,7 +28,8 @@ const (
 // OpenFix opens your terminal with an SSH session to server, logged in with
 // your own admin login, and the fix typed in. key selects the findings: a
 // notification group ("cve:CVE-…", "reboot:<server>"), or "" for everything
-// fixable on the server.
+// fixable on the server. For this computer there's no SSH: a Mac opens
+// System Settings › Software Update, Linux a local terminal with the fix.
 func OpenFix(paths config.Paths, cfg *config.Config, server, key string) error {
 	s, ok := cfg.Server(server)
 	if !ok {
@@ -34,6 +38,9 @@ func OpenFix(paths config.Paths, cfg *config.Config, server, key string) error {
 	inv, err := inventory.Load(paths, server)
 	if err != nil {
 		return err
+	}
+	if s.Local && inv.IsMac() {
+		return openSoftwareUpdate()
 	}
 	st, err := findings.Load(paths)
 	if err != nil {
@@ -57,7 +64,20 @@ func OpenFix(paths config.Paths, cfg *config.Config, server, key string) error {
 	}
 	script := termlaunch.RemoteScript(termlaunch.Banner(server, fs, cmd), cmd)
 	launcher := termlaunch.Launcher{Terminal: cfg.Terminal, TempDir: paths.Temp}
+	if s.Local {
+		return launcher.Open(termlaunch.LocalFixLauncher(script))
+	}
 	return launcher.Open(termlaunch.FixLauncher(s, termlaunch.RemoteCommand(script)))
+}
+
+// softwareUpdateURL opens System Settings › General › Software Update.
+const softwareUpdateURL = "x-apple.systempreferences:com.apple.Software-Update-Settings.extension"
+
+func openSoftwareUpdate() error {
+	if err := exec.Command("/usr/bin/open", softwareUpdateURL).Run(); err != nil {
+		return apperr.Wrap(apperr.TerminalFailed, err, "cannot open System Settings › Software Update")
+	}
+	return nil
 }
 
 // fix opens the fix for one server, marks its button ✓ and checks the
@@ -106,21 +126,28 @@ func (d *Daemon) followUp(server string) {
 				return
 			case <-time.After(d.followUpEvery):
 			}
-			key := d.currentKey()
 			cfg, err := config.Load(d.paths.Config)
-			if key == nil || err != nil {
+			if err != nil {
 				continue
 			}
 			s, ok := cfg.Server(server)
 			if !ok {
 				return
 			}
+			var signer ssh.Signer // this computer is read without the key
+			if !s.Local {
+				key := d.currentKey()
+				if key == nil {
+					continue
+				}
+				signer = key.Signer()
+			}
 			eng := d.newEngine(cfg)
-			if failed := eng.Refresh(d.ctx, key.Signer(), []config.Server{s}); len(failed) > 0 {
+			if failed := eng.Refresh(d.ctx, signer, []config.Server{s}); len(failed) > 0 {
 				d.refreshFailed(failed)
 				continue
 			}
-			res, err := eng.Match(d.ctx, cfg.Servers)
+			res, err := eng.Match(d.ctx, cfg.Checked())
 			if err != nil {
 				continue
 			}

@@ -53,11 +53,31 @@ func (w *wizard) run(res *initResult) error {
 			return err
 		}
 	}
-	if res.Unlocked && len(servers) > 0 {
+	res.ThisComputer = w.cfg.ThisComputer
+	if res.Service && (res.Unlocked || len(servers) == 0) && (len(servers) > 0 || w.cfg.ThisComputer) {
 		w.firstCheck()
 	}
 	return nil
 }
+
+// thisComputer asks whether to check the computer mis runs on, too.
+func (w *wizard) thisComputer() error {
+	a := w.a
+	what := "its packages, like a server's"
+	if runtime.GOOS == "darwin" {
+		what = "macOS and Safari updates with the vulnerabilities they fix, and Homebrew"
+	}
+	a.say("It can also check %s: %s. Nothing is installed or changed for that.\n", lower(config.LocalLabel()), what)
+	ok, err := a.confirm("Check "+lower(config.LocalLabel())+" too?", true)
+	if err != nil {
+		return err
+	}
+	w.cfg.ThisComputer = ok
+	return w.cfg.Save(w.paths.Config)
+}
+
+// lower lowercases the first letter: "This Mac" → "this Mac".
+func lower(s string) string { return strings.ToLower(s[:1]) + s[1:] }
 
 // close wipes the key the wizard unlocked for adding servers.
 func (w *wizard) close() {
@@ -150,7 +170,11 @@ func (w *wizard) askScore(question string, def float64, offOK bool) (float64, er
 
 func (w *wizard) servers() ([]string, error) {
 	a := w.a
-	a.say("\n4. Servers\nFor each server, a read-only \"mis\" user is created through your own ssh login.\n" +
+	a.say("\n4. Servers\n")
+	if err := w.thisComputer(); err != nil {
+		return nil, err
+	}
+	a.say("\nFor each server, a read-only \"mis\" user is created through your own ssh login.\n" +
 		"Have your usual `ssh` login ready (keys or password: Make-It-Safer never sees it).\n")
 	var added []string
 	for {
@@ -187,8 +211,8 @@ func (w *wizard) servers() ([]string, error) {
 // the passphrase from step 1.
 func (w *wizard) service() (running, unlocked bool, err error) {
 	a := w.a
-	a.say("\n5. Background service\nIt checks your servers on a schedule and shows notifications. It starts at every\n" +
-		"login, locked, until it's unlocked with your passphrase.\n")
+	a.say("\n5. Background service\nMake-It-Safer runs in the background: it checks on a schedule and shows\n" +
+		"notifications. It starts every time you log in.\n")
 	ok, err := a.confirm("Install and start it now?", true)
 	if err != nil {
 		return false, false, err
@@ -211,7 +235,6 @@ func (w *wizard) service() (running, unlocked bool, err error) {
 		a.say("✗ The background service didn't start. See: mis service logs\n")
 		return false, false, nil
 	}
-	a.say("Unlocking it…\n")
 	pass := slices.Clone([]byte(w.pass)) // Call wipes what it sends
 	if err := daemon.Call(w.paths, daemon.Request{Op: daemon.OpUnlock, Passphrase: pass}, nil, 2*time.Minute); err != nil {
 		a.say("✗ %s\n  Unlock it later: mis unlock\n", apperr.MessageOf(err))
@@ -228,14 +251,16 @@ func (w *wizard) autoUnlock() (bool, error) {
 	if !keyring.Available() {
 		return false, nil
 	}
-	a.say("\nAfter a restart it can unlock itself when you log in, with an unlock key kept in\n" +
-		"your macOS Keychain. Your passphrase is still never stored.\n")
-	ok, err := a.confirm("Unlock automatically when you log in?", true)
+	a.say("\nAfter a restart, it needs unlocking before it can log in to your servers.\n" +
+		"  • Yes: it unlocks itself when you log in. An unlock key is kept in your macOS\n" +
+		"    Keychain; your passphrase is still never stored.\n" +
+		"  • No: you type your passphrase once after each restart (mis unlock).\n")
+	ok, err := a.confirm("Unlock automatically after a restart?", true)
 	if err != nil {
 		return false, err
 	}
 	if !ok {
-		a.say("Later: mis auto-unlock on\n")
+		a.say("OK: after each restart, run mis unlock. To change it later: mis auto-unlock on\n")
 		return false, nil
 	}
 	if a.unlocked == nil {
@@ -248,40 +273,28 @@ func (w *wizard) autoUnlock() (bool, error) {
 		a.say("✗ %s\n  Try again later: mis auto-unlock on\n", apperr.MessageOf(err))
 		return false, nil
 	}
-	a.say("✓ Auto-unlock is on.\n")
+	a.say("✓ Done: after a restart it unlocks itself when you log in.\n")
 	return true, nil
 }
 
 func (w *wizard) notifyTest() error {
 	a := w.a
 	a.say("\n6. Notifications\n")
-	if err := daemon.Call(w.paths, daemon.Request{Op: daemon.OpNotify}, nil, 10*time.Second); err != nil {
-		a.say("✗ %s\n  Try again later: mis notify test\n", apperr.MessageOf(err))
-		return nil
-	}
-	seen, err := a.confirm("A test notification with two buttons should be on your screen. Do you see it?", true)
-	if err != nil {
-		return err
-	}
-	if seen {
-		a.say("Click one of its buttons: your terminal should open and show mis status.\n")
-		return nil
-	}
 	if runtime.GOOS == "darwin" {
-		a.say("On macOS, notifications come from the helper app in ~/Applications (installed by make install).\n" +
-			"In System Settings → Notifications → Make-It-Safer Notifier, allow notifications and pick the\n" +
-			"\"Alerts\" style, so they stay on screen. Then try: mis notify test\n")
-	} else {
-		a.say("Your desktop needs a notification service (GNOME, KDE and most desktops have one).\nThen try: mis notify test, or see: mis doctor\n")
+		a.say("macOS needs your OK before Make-It-Safer can show alerts.\n")
 	}
-	return nil
+	_, err := a.setUpNotifications(w.paths)
+	return err
 }
 
 func (w *wizard) firstCheck() {
 	a := w.a
-	a.say("\n7. First check\nReading your servers' package lists and matching them (this can take a minute)…\n")
+	a.say("\n7. First check (the first one can take a few minutes)\n")
 	var res daemon.CheckResult
-	if err := daemon.Call(w.paths, daemon.Request{Op: daemon.OpCheck, Refresh: true}, &res, 10*time.Minute); err != nil {
+	err := a.withSpinner("Reading package lists and matching them", func() error {
+		return daemon.Call(w.paths, daemon.Request{Op: daemon.OpCheck, Refresh: true}, &res, 10*time.Minute)
+	})
+	if err != nil {
 		a.say("✗ %s\n  Try again later: mis check\n", apperr.MessageOf(err))
 		return
 	}

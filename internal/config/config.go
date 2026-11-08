@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"regexp"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -21,18 +22,64 @@ import (
 // Config is config.yaml. It never holds secrets.
 type Config struct {
 	Version       int           `yaml:"version"`
+	ThisComputer  bool          `yaml:"this_computer"` // also check the computer mis runs on
 	Servers       []Server      `yaml:"servers"`
 	Rules         Rules         `yaml:"rules"`
+	Schedule      Schedule      `yaml:"schedule"`
 	Terminal      Terminal      `yaml:"terminal"`
 	Notifications Notifications `yaml:"notifications"`
 }
 
-// Server is a VPS registered with Make-It-Safer.
+// Schedule sets how often the background service checks. Each has a
+// minimum (ScheduleMinimums) so the data sources aren't asked too often.
+type Schedule struct {
+	NewCVEs     Duration `yaml:"new_cves"`     // read brand-new CVEs from cve.org (early warnings)
+	DataChanges Duration `yaml:"data_changes"` // ask Debian, Ubuntu and CISA whether their data changed
+	FullCheck   Duration `yaml:"full_check"`   // match everything again; read this computer again
+	Servers     Duration `yaml:"servers"`      // log in to the servers and read their packages again
+}
+
+// ScheduleMinimums are the shortest allowed intervals, by YAML name.
+var ScheduleMinimums = map[string]time.Duration{
+	"new_cves": 5 * time.Minute, "data_changes": 10 * time.Minute, "full_check": 30 * time.Minute, "servers": time.Hour,
+}
+
+// maxInterval bounds every interval: checks must happen at least weekly.
+const maxInterval = 7 * 24 * time.Hour
+
+// Server is a VPS registered with Make-It-Safer, or this computer (Local).
 type Server struct {
 	Name     string `yaml:"name"`      // short name shown in notifications, e.g. ovh-web-1
 	Host     string `yaml:"host"`      // IP address or hostname
 	Port     int    `yaml:"port"`      // SSH port
 	AdminSSH string `yaml:"admin_ssh"` // your own login as typed after `ssh`: user@host or an ~/.ssh/config alias
+	Local    bool   `yaml:"-"`         // this computer: checked directly, no SSH
+}
+
+// LocalName is this computer's name in findings and notifications.
+func LocalName() string {
+	if runtime.GOOS == "darwin" {
+		return "this-mac"
+	}
+	return "this-computer"
+}
+
+// LocalLabel is how notifications and screens call this computer.
+func LocalLabel() string {
+	if runtime.GOOS == "darwin" {
+		return "This Mac"
+	}
+	return "This computer"
+}
+
+// Checked lists everything a check covers: the servers, then this computer
+// when this_computer is on.
+func (c *Config) Checked() []Server {
+	out := slices.Clone(c.Servers)
+	if c.ThisComputer {
+		out = append(out, Server{Name: LocalName(), Local: true})
+	}
+	return out
 }
 
 // Rules decide which vulnerabilities alert you and how often you're reminded.
@@ -109,6 +156,10 @@ func Default() Config {
 				Normal: Duration(7 * 24 * time.Hour),
 			},
 		},
+		Schedule: Schedule{
+			NewCVEs: Duration(15 * time.Minute), DataChanges: Duration(30 * time.Minute),
+			FullCheck: Duration(6 * time.Hour), Servers: Duration(12 * time.Hour),
+		},
 		Terminal:      Terminal{App: "default"},
 		Notifications: Notifications{MaxButtons: 3, Sound: true},
 	}
@@ -164,11 +215,11 @@ func (c *Config) Save(path string) error {
 
 // Server returns the server with the given name.
 func (c *Config) Server(name string) (Server, bool) {
-	i := slices.IndexFunc(c.Servers, func(s Server) bool { return s.Name == name })
+	i := slices.IndexFunc(c.Checked(), func(s Server) bool { return s.Name == name })
 	if i < 0 {
 		return Server{}, false
 	}
-	return c.Servers[i], true
+	return c.Checked()[i], true
 }
 
 var (
@@ -185,6 +236,8 @@ func (s Server) Validate() error {
 	switch {
 	case !serverNamePattern.MatchString(s.Name):
 		return fmt.Errorf("name %q: use lowercase letters, digits, '.', '_' or '-' (max 63)", s.Name)
+	case s.Name == "this-mac" || s.Name == "this-computer":
+		return fmt.Errorf("name %q is kept for this computer; choose another", s.Name)
 	case !hostPattern.MatchString(s.Host):
 		return fmt.Errorf("host %q is not a valid hostname or IP address", s.Host)
 	case s.Port < 1 || s.Port > 65535:
@@ -240,6 +293,12 @@ func (c *Config) Validate() error {
 	for name, d := range map[string]Duration{"urgent": r.Remind.Urgent, "high": r.Remind.High, "normal": r.Remind.Normal} {
 		if time.Duration(d) < time.Minute {
 			add("rules.remind.%s must be at least 1m", name)
+		}
+	}
+	s := c.Schedule
+	for name, d := range map[string]Duration{"new_cves": s.NewCVEs, "data_changes": s.DataChanges, "full_check": s.FullCheck, "servers": s.Servers} {
+		if lowest := ScheduleMinimums[name]; time.Duration(d) < lowest || time.Duration(d) > maxInterval {
+			add("schedule.%s must be between %s and 7d", name, FormatDuration(lowest))
 		}
 	}
 

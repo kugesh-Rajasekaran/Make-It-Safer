@@ -27,6 +27,7 @@ var AllowedHosts = []string{
 	"www.cisa.gov",
 	"api.first.org",
 	"endoflife.date",
+	"support.apple.com", // Apple security notes, for this Mac (ADR 0003)
 }
 
 const (

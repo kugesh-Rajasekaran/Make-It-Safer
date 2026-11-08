@@ -123,7 +123,7 @@ func (a *app) statusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			for _, srv := range cfg.Servers {
+			for _, srv := range cfg.Checked() {
 				row := serverStatus{Name: srv.Name, Open: map[string]int{}}
 				if t, ok := st.Checked[srv.Name]; ok {
 					row.Checked = &t
