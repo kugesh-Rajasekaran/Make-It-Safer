@@ -13,7 +13,7 @@ Standards are adapted from the DineSynk repo (working style, engineering princip
 - **Servers supported (v1):** Ubuntu, Debian
 - **Audience (v1):** personal use, installed from source
 - **Vulnerability data:** OSV.dev (confirmed), CVE List (early warning), CISA KEV, EPSS, endoflife.date
-- **Status:** planning done. Implementation starts at milestone **M0**. There is no code yet.
+- **Status:** milestones M0–M7 built. What's left is checking on the user's own Mac, Linux desktop and servers (spikes S2, S3 and the acceptance checklist in the plan).
 
 **Source of truth:** `docs/design.md` (how it works, decisions) and `docs/implementation-plan.md` (milestones M0–M7, tasks). Domain vocabulary is in `CONTEXT.md`.
 
@@ -37,6 +37,7 @@ Standards are adapted from the DineSynk repo (working style, engineering princip
 
 1. **Secrets never leave memory.**
    - Passphrase, decrypted key and admin credentials are never written to disk, logs, error messages, env vars, command-line arguments or temp files.
+   - The one exception is opt-in auto-unlock (ADR 0002): a random unlock key goes only to the OS secret store (macOS login Keychain) via `internal/keyring`, never anywhere else.
    - The passphrase is read only from the TTY (`golang.org/x/term`), never from flags or env.
 2. **Secrets live in locked memory** (`memguard`) and are wiped after use. Core dumps are disabled in the daemon.
 3. **`mis` never holds the user's admin login.** Server setup and fixes run through the user's own `ssh` binary in their terminal.
@@ -51,7 +52,7 @@ Standards are adapted from the DineSynk repo (working style, engineering princip
 7. **Treat Collector output as hostile:** size limits, strict parsing, validation and fuzz tests.
 8. **No custom crypto.**
    - Use only `golang.org/x/crypto` primitives, with the parameters from the plan: Argon2id (RFC 9106), XChaCha20-Poly1305, Ed25519.
-   - Never weaken the passphrase policy (NIST SP 800-63B-4 plus design §5.2).
+   - The passphrase policy is design §5.2: at least 8 characters, nothing else (ADR 0001, the user's decision). Change it only with a new ADR.
 9. **Files:** the config directory is 0700 and files are 0600. Refuse to run if permissions are looser. No cloud sync, no telemetry.
 10. **Network allowlist:** connect only to the destinations in design §4.9. Adding one requires updating the design.
 
@@ -72,17 +73,23 @@ Standards are adapted from the DineSynk repo (working style, engineering princip
 ```
 cmd/mis/                 main
 internal/cli/            commands (cobra)
+internal/apperr/         error type + registry of area-prefixed codes
+internal/secret/         secret byte type that never prints, logs or marshals
 internal/daemon/         scheduler, socket server, lock state
-internal/vault/          passphrase policy, key file, secure memory
+internal/vault/          passphrase policy, key file, auto-unlock file (key.auto), secure memory
+internal/keyring/        OS secret store for the auto-unlock key (macOS Keychain via cgo; Linux later)
 internal/sshx/           SSH client, host-key pinning, collector call
 internal/inventory/      collector output parser + validation
 internal/feeds/{osv,kev,epss,cvelist,eol}/
 internal/match/          early-warning name matcher
+internal/doctor/         mis doctor checks (each a function of plain inputs)
 internal/findings/       state machine, priorities, reminders, storage
+internal/engine/         a check: refresh package lists, match them, record findings
 internal/fixcmd/         update command builder (the ONLY place commands are built)
 internal/notify/         notifier interface, linux (D-Bus), darwin (helper IPC)
 internal/termlaunch/     terminal launcher, prefill snippet
 internal/setup/          server setup/teardown scripts, verify checks
+internal/testenv/        throwaway Docker SSH servers for integration tests
 internal/config/         schema, defaults, paths, permission checks
 server/                  collect.sh, setup/teardown templates (embedded)
 macos/Notifier/          Swift helper app
@@ -92,15 +99,15 @@ packaging/               launchd plist, systemd unit
 ### Errors and Output
 
 - **Error codes** are specific and prefixed by area (DineSynk pattern):
-  - ✅ `VAULT_PASSPHRASE_TOO_WEAK`, `SERVER_HOSTKEY_MISMATCH`, `OSV_QUERY_FAILED`
+  - ✅ `VAULT_PASSPHRASE_TOO_SHORT`, `SERVER_HOSTKEY_MISMATCH`, `OSV_QUERY_FAILED`
   - ❌ generic `NOT_FOUND`, `FAILED`, `INTERNAL_ERROR`
 - **Every command supports `--json`:**
   - Success: `{"ok": true, "data": …}`
   - Failure: `{"ok": false, "error": {"code": "…", "message": "…"}}`
   - Human-readable output otherwise.
 - **Agent-surface lens** (DineSynk): "Can an AI agent do this through the CLI?"
-  - **Yes** for status, findings, checks and ack.
-  - **Deliberately no** for unlock (the passphrase is TTY-only) and server setup (needs the human's admin login).
+  - **Yes** for status, findings, checks, ack and settings (`mis config get/set`).
+  - **Deliberately no** for unlock and `mis auto-unlock on` (the passphrase is TTY-only) and server setup (needs the human's admin login).
 
 ### Logging
 

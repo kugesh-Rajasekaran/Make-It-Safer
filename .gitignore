@@ -1,0 +1,15 @@
+# Build output
+/bin/
+*.test
+*.out
+coverage.*
+
+# macOS helper build
+/macos/Notifier/.build/
+/macos/build/
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+*.swp

@@ -40,7 +40,7 @@ For every server you own, always know which vulnerabilities affect it, and be on
 
 ### Must have
 - Read-only `mis` user with a forced command; pinned host keys.
-- One passphrase per restart (NIST SP 800-63B-4 plus offline extras). The key is stored only encrypted; secrets live only in locked memory.
+- One passphrase per restart (at least 8 characters; ADR 0001). The key is stored only encrypted; secrets live only in locked memory.
 - Confirmed findings from distro data via OSV, prioritised with KEV, EPSS, CVSS and end-of-life, with reminders.
 - One notification per CVE with a button per server that doesn't close it. Each button opens Terminal (configurable) → SSH with your admin login → fix command typed in.
 - Early warning for severity ≥ 9 or exploited CVEs.
@@ -89,14 +89,16 @@ For every server you own, always know which vulnerabilities affect it, and be on
 
 | # | Milestone | Size | After it, you can… | Status |
 |---|---|---|---|---|
-| M0 | Foundations | S | run `mis version` on Mac and Linux | ⬜ Not started |
-| M1 | Passphrase and key | M | create your passphrase and encrypted key | ⬜ |
-| M2 | Read-only server access | M | set up a server and prove it's read-only | ⬜ |
-| M3 | Vulnerability checks | L | run `mis check` and see what's vulnerable where | ⬜ |
-| M4 | Background service | M | reboot, unlock once, and checks run by themselves | ⬜ |
-| M5 | Notifications and fix flow (Mac first) | L | click a server button and get SSH with the fix typed in | ⬜ |
-| M6 | Early warning | S | get heads-ups for critical CVEs within ~15 min | ⬜ |
-| M7 | Setup wizard and polish | M | set everything up with `mis init` alone | ⬜ |
+| M0 | Foundations | S | run `mis version` on Mac and Linux | ✅ Done |
+| M1 | Passphrase and key | M | create your passphrase and encrypted key | ✅ Done |
+| M2 | Read-only server access | M | set up a server and prove it's read-only | ✅ Done |
+| M3 | Vulnerability checks | L | run `mis check` and see what's vulnerable where | ✅ Done |
+| M4 | Background service | M | reboot, unlock once, and checks run by themselves | ✅ Done |
+| M5 | Notifications and fix flow (Mac first) | L | click a server button and get SSH with the fix typed in | ✅ Built · S2/S3 on your Mac and Linux desktop |
+| M6 | Early warning | S | get heads-ups for critical CVEs within ~15 min | ✅ Done |
+| M7 | Setup wizard and polish | M | set everything up with `mis init` alone | ✅ Built · your fresh-setup check pending |
+| M8 | Auto-unlock (macOS) | M | restart your Mac and never type the passphrase | ✅ Built · tested on your Mac |
+| M9 | Settings screen | S | change alert scores, reminders and the terminal with `mis config` | ✅ Built · tested in a real terminal |
 
 ### M0 · Foundations (S)
 Goal: an empty but solid project.
@@ -116,12 +118,12 @@ Goal: design §4.2 and §5.2.
 
 | ID | Task | Done when |
 |---|---|---|
-| T-101 | `feat(vault)` passphrase policy: NIST rules (≥ 15 code points after NFC, ≤ 1024, no composition rules), blocklist + context words, strength floor ≥ 10¹⁴ guesses, 6-word generator 🔒 | Accept/reject table tests with reasons; strength-estimator dependency justified; wordlist and blocklist licences noted |
+| T-101 | `feat(vault)` passphrase policy: ≥ 8 code points after NFC (ADR 0001; was ≥ 15 + blocklist + strength floor), ≤ 1024, no composition rules, 6-word generator 🔒 | Accept/reject table tests with reasons |
 | T-102 | `feat(vault)` key file: Ed25519, Argon2id (RFC 9106 parameters chosen by RAM), XChaCha20-Poly1305, authenticated header 🔒 | Round-trip works; wrong passphrase and tampered or truncated files rejected |
 | T-103 | `feat(vault)` secure memory (memguard), core dumps off, anti-debug, unlock rate limit 🔒 | Key buffer wiped on lock; delay grows after failed attempts |
 | T-104 | `feat(cli)` `mis init` (passphrase + key step) and `mis passphrase change`, TTY-only input | Piped input refused with `VAULT_TTY_REQUIRED` |
 
-**You check (Mac):** run `mis init`. A weak passphrase is rejected with a reason and a strong one is accepted. Then `mis passphrase change` works.
+**You check (Mac):** run `mis init`. A passphrase under 8 characters is rejected with a reason and an 8-character one is accepted. Then `mis passphrase change` works.
 
 ### M2 · Read-only server access (M)
 Goal: design §4.1.
@@ -178,6 +180,8 @@ Goal: design §4.6 and §4.7. Starts with spike S2 on your Mac.
 | T-505 | `feat(notify)` Linux D-Bus notifier: actions, `resident`, `replaces_id`, 3-button limit, re-post fallback | Tests against a fake notification server |
 | T-506 | `test(e2e)` fix → re-check → ✅ resolved | Green in Docker |
 
+Built and tested here: T-501, T-502, T-504, T-505, T-506 (Docker: prefill, Enter, edit, Ctrl-C, upgrade from a local apt repository, ✅ resolved). CI compiles T-503. Still yours: S2 and S3, the checks below.
+
 **You check:**
 1. On your Mac, run `mis notify test`.
 2. Then, on a real finding: click a server button → Terminal → SSH → command typed in → Enter → ✅.
@@ -192,6 +196,8 @@ Goal: design §4.5.
 | T-602 | `feat(match)` vendor/product → installed source package matcher + alias table | Regression tests, including known false matches (Drupal "File Force Download" ≠ `file`) |
 | T-603 | `feat(findings)` early-warning lifecycle (unconfirmed → confirmed or not affected) + 🟡 notification | Replayed-feed tests |
 
+Built: the delta log is read by byte range (64 KB per run normally). Watched CVEs are re-read when CISA updates them. Early warnings expire after 30 days without distro data. Checked against two days of real CVEs and a typical server's packages; see design §4.5.
+
 **You check:** the first real heads-up arrives (expect about 1–2 a week) and later turns into "confirmed" or "not affected".
 
 ### M7 · Setup wizard and polish (M)
@@ -204,7 +210,39 @@ Goal: design §4.5.
 | T-704 | `docs` `docs/user-guide.md`: install, daily use, fixing, unlocking, removing a server, troubleshooting | You can follow it alone |
 | T-705 | `test` final review: threat model walk-through (design §5.1), full matrix, fuzz, log scan for secrets 🔒 | All green; anything found is fixed |
 
+Built and tested here:
+- **T-701:** the whole wizard runs end-to-end through a pseudo-terminal against a fake background service. The passphrase is never echoed, and the service is unlocked without asking twice.
+- **T-702:** a test per check.
+- **T-703:** works on Linux; the macOS part is yours.
+- **T-705:** every fuzz target ran for 30 s, and the Docker integration suite passes on Ubuntu (Debian runs in CI). The log scan is a test now. The threat-model walkthrough found one gap: a host-key mismatch during a background refresh was only logged. It now raises an urgent notification.
+
 **You check:** a fresh setup on your Mac using only the user guide.
+
+### M8 · Auto-unlock, macOS (M)
+Goal: design §4.2 (auto-unlock), [ADR 0002](adr/0002-auto-unlock-keychain.md). Branch: `feat/auto-unlock`.
+
+| ID | Task | Done when |
+|---|---|---|
+| T-801 | `feat(keyring)` macOS Keychain item (Security framework via cgo): set, get, delete, all pinned to the login keychain by path; re-saved after each read so the current build owns it 🔒 | Round trip against the real Keychain (`-tags keychain`); item found in `login.keychain-db` |
+| T-802 | `feat(vault)` `key.auto`: the key encrypted with a random 256-bit unlock key; enable, open, disable; bound to `key.enc`'s public key 🔒 | Tamper, wrong-key, stale-file and store-failure tests |
+| T-803 | `feat(daemon)` unlock itself at start; locked notice only if that fails; `mis lock` wins over an unlock in progress; one passphrase unlock at a time | Daemon tests with a fake Keychain |
+| T-804 | `feat(cli)` `mis auto-unlock on\|off`, wizard question (default yes), status and doctor lines | Tried on your Mac |
+| T-805 | `docs` design, user guide, glossary, ADR 0002 | — |
+
+Built and tested on your Mac: auto-unlock at start in ~20 ms, `mis lock` stays locked, off → locked after restart, on while locked → unlocks now. The Linux build compiles and lints (`mis auto-unlock on` there returns `KEYRING_UNAVAILABLE`; not run on a Linux desktop). After a rebuild macOS asked once; "Always Allow" alone didn't last for ad-hoc builds, so the item is re-saved by the new build, and later starts were silent.
+
+**You check:** turn it on for your real install (`mis auto-unlock on`), restart your Mac, log in, run `mis status`: unlocked, no passphrase typed.
+
+### M9 · Settings screen (S)
+Goal: change settings without editing YAML. Branch: `feat/config-command`.
+
+| ID | Task | Done when |
+|---|---|---|
+| T-901 | `feat(config)` one settings table (name, label, how it's edited, parse and show); every change validated, rejected values leave the file untouched | Round-trip and rejection tests for every setting |
+| T-902 | `feat(cli)` `mis config`: every setting in one list, 10 rows at a time, ↑/↓ scroll, Enter edits (yes/no flips, choices as a list, values asked with the current one as default), back to the same place; auto-unlock row on macOS | Driven with real arrow keys through a pseudo-terminal |
+| T-903 | `feat(cli)` `mis config get [name]` and `set <name> <value>` with `--json`; without a terminal `mis config` prints the list | CLI tests |
+
+**You check:** run `mis config`, change a reminder, quit, and see it with `mis config get`.
 
 ---
 
@@ -227,7 +265,7 @@ The M2 Docker matrix also proves the sshd drop-in works on each distro.
 - [ ] Every apt security update shows up in `mis findings`.
 - [ ] One notification per CVE, with a button per affected server; clicking a button doesn't close it.
 - [ ] Button → Terminal → SSH → fix command typed in → Enter → ✅ resolved notification within an hour.
-- [ ] Weak passphrases are rejected with a reason.
+- [ ] Passphrases under 8 characters are rejected with a reason.
 - [ ] `mis doctor` is all green.
 
 ---

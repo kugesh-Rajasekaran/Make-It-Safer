@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Make-It-Safer background service. Installed by: mis service install -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>{{.Label}}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{{.Binary}}</string>
+    <string>daemon</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Interactive</string>
+  <key>StandardOutPath</key>
+  <string>{{.Log}}</string>
+  <key>StandardErrorPath</key>
+  <string>{{.Log}}</string>
+{{- if .Home}}
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>MIS_HOME</key>
+    <string>{{.Home}}</string>
+  </dict>
+{{- end}}
+</dict>
+</plist>
