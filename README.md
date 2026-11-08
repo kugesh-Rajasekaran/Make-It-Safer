@@ -36,3 +36,11 @@ make test-integration   # Docker: throwaway Ubuntu/Debian SSH servers
                         # (MIS_TEST_IMAGES=ubuntu:24.04 runs a subset)
 git config core.hooksPath .githooks   # run `make check` before each commit
 ```
+
+## Security
+
+Found a vulnerability in Make-It-Safer itself? Please report it privately; see [SECURITY.md](SECURITY.md).
+
+## License
+
+[MIT](LICENSE). Generated passphrases use the [EFF long word list](https://www.eff.org/deeplinks/2016/07/new-wordlists-random-passphrases) (CC BY 3.0 US) through [go-diceware](https://github.com/sethvargo/go-diceware).
