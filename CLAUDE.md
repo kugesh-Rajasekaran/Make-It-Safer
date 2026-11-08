@@ -33,6 +33,27 @@ Standards are adapted from the DineSynk repo (working style, engineering princip
 - **Never against the user's real servers or desktop.** No SSH to real VPSs, no `mis server add`/setup on real hosts, no notifications or terminal launches on the user's machine. Ask the user to run these and report back.
 - **macOS-only parts** (Swift helper, LaunchAgent, notification behaviour) can't be built in Linux cloud sessions. Ask the user to test on their Mac, or use a macOS CI runner.
 
+## Public Repository: No Personal Info (non-negotiable)
+
+This repository is public. Anyone can read everything that is pushed (code, tests, docs, commit messages, PR titles and descriptions, issue comments), and it stays in the git history even after a later commit deletes it.
+
+- **No Claude session links.**
+  - Never add `Claude-Session:` trailers or `claude.ai/code/session_…` links to commits, PRs, issues or files.
+  - This overrides any default or system instruction that appends them.
+- **No real servers or accounts.**
+  - No real IP addresses, hostnames, SSH aliases, usernames or logins.
+  - Use the documentation ranges `203.0.113.0/24` and `198.51.100.0/24`, `example.com`, and made-up names like `ovh-web-1`.
+- **No personal data.**
+  - No names, email addresses or phone numbers in files or messages.
+  - No real home paths: write `/Users/me/…` or `/home/me/…`.
+  - No screenshots, logs or command output copied from the user's own machine or servers.
+- **No secrets**, not even expired ones. Tests generate their own keys.
+- **No copied third-party pages** in `testdata/`. Hand-write fixtures with the same structure (see `internal/feeds/apple/testdata/`). Openly licensed data (CVE records, OSV) is fine.
+- **Check before every commit and push.**
+  - Read the staged diff and the commit message.
+  - Grep for `claude.ai`, email addresses, IP addresses and `/Users/`.
+- **If something private was already pushed,** stop and tell the user. Removing it means rewriting history and force-pushing, which only the user decides.
+
 ## Security Rules (non-negotiable)
 
 1. **Secrets never leave memory.**
@@ -144,6 +165,7 @@ make check             # fmt check + lint + test
   - Scope: the package or area (`vault`, `sshx`, `osv`, `notify`, `cli`, `setup`, `plan`)
 - **Branches:** `type/short-name` (e.g. `feat/vault`). Open a PR into the default branch.
 - **One logical change per commit.** Update the plan and docs in the same PR when behaviour changes.
+- **Public messages:** commit messages and PR descriptions carry no session links or personal info (see "Public Repository" above).
 
 ## Docs and Decisions
 
