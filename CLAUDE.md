@@ -80,7 +80,8 @@ internal/vault/          passphrase policy, key file, auto-unlock file (key.auto
 internal/keyring/        OS secret store for the auto-unlock key (macOS Keychain via cgo; Linux later)
 internal/sshx/           SSH client, host-key pinning, collector call
 internal/inventory/      collector output parser + validation
-internal/feeds/{osv,kev,epss,cvelist,eol}/
+internal/feeds/{osv,kev,epss,cvelist,eol,apple}/   (apple: security notes, parsed HTML, ADR 0003)
+internal/local/          this computer's inventory: the collector on Linux; sw_vers, softwareupdate, brew on a Mac
 internal/match/          early-warning name matcher
 internal/doctor/         mis doctor checks (each a function of plain inputs)
 internal/findings/       state machine, priorities, reminders, storage

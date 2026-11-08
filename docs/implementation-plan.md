@@ -99,6 +99,7 @@ For every server you own, always know which vulnerabilities affect it, and be on
 | M7 | Setup wizard and polish | M | set everything up with `mis init` alone | ✅ Built · your fresh-setup check pending |
 | M8 | Auto-unlock (macOS) | M | restart your Mac and never type the passphrase | ✅ Built · tested on your Mac |
 | M9 | Settings screen | S | change alert scores, reminders and the terminal with `mis config` | ✅ Built · tested in a real terminal |
+| M10 | This computer | L | have the Mac (or Linux desktop) `mis` runs on checked too, from `mis init` | ✅ Built · Mac tested on your Mac; Linux desktop by tests only |
 
 ### M0 · Foundations (S)
 Goal: an empty but solid project.
@@ -243,6 +244,22 @@ Goal: change settings without editing YAML. Branch: `feat/config-command`.
 | T-903 | `feat(cli)` `mis config get [name]` and `set <name> <value>` with `--json`; without a terminal `mis config` prints the list | CLI tests |
 
 **You check:** run `mis config`, change a reminder, quit, and see it with `mis config get`.
+
+### M10 · This computer (L)
+Goal: design §4.10, [ADR 0003](adr/0003-this-computer.md). Branch: `feat/this-computer`.
+
+| ID | Task | Done when |
+|---|---|---|
+| T-1000 | `fix(daemon)` schedule by wall-clock time so overdue jobs run right after wake-up | Test fails without the fix (monotonic reading) |
+| T-1001 | `feat(local)` read this computer: the collector on Linux; `sw_vers`, Safari, `softwareupdate --list`, `brew outdated` on a Mac; any failure fails the whole read 🔒 | Parser tests; real run on your Mac |
+| T-1002 | `feat(apple)` Apple security notes: index and release pages, strict HTML parsing, cache with ETags, stale copy when down; `support.apple.com` allowlisted 🔒 | Tests on saved pages |
+| T-1003 | `feat(engine)` this computer as a server without SSH: Linux via OSV; Mac via Apple's notes (CVEs of releases between installed and offered), end of life, Homebrew | Fake-server tests: findings, priorities, resolve after update, Apple down keeps findings |
+| T-1004 | `feat(daemon)` checked on every match without the key; one notification per Apple update with a "This Mac" button opening Software Update; follow-ups without the key | Notification tests |
+| T-1005 | `feat(cli)` `mis init` asks "Check this Mac too?"; `this_computer` in `mis config`; `check/status/doctor/fix` include it | Tried on your Mac |
+
+Built and tested on your Mac: `mis check` read macOS 15.7.7, Safari 26.6.1, 3 Apple updates and 187 Homebrew packages, and found 567 vulnerabilities (59 urgent, 2 actively exploited) in about 45 s; `mis fix this-mac` opened Software Update. The Linux-desktop path is covered by unit tests and CI only.
+
+**You check:** run `mis config`, turn on "Also check this Mac", run `mis check this-mac`, then click a "This Mac" notification button.
 
 ---
 

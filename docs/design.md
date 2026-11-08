@@ -372,7 +372,23 @@ Files live in `~/.config/mis` (Linux) or `~/Library/Application Support/MakeItSa
 
 There's no cloud sync and no telemetry. `mis doctor` warns if the directory sits inside a synced folder (iCloud Drive, Dropbox, …).
 
-**Outbound connections:** `api.osv.dev`, `osv-vulnerabilities.storage.googleapis.com`, `raw.githubusercontent.com` (CVE List, KEV mirror), `www.cisa.gov`, `api.first.org`, `endoflife.date`, and your servers over SSH. Nothing else.
+**Outbound connections:** `api.osv.dev`, `osv-vulnerabilities.storage.googleapis.com`, `raw.githubusercontent.com` (CVE List, KEV mirror), `www.cisa.gov`, `api.first.org`, `endoflife.date`, `support.apple.com` (Apple security notes, only when this computer is a Mac, ADR 0003), and your servers over SSH. Nothing else. (`softwareupdate` and Homebrew, which `mis` runs to read a Mac, contact Apple and Homebrew themselves, as they always do.)
+
+### 4.10 This computer (optional)
+
+The computer `mis` runs on can be checked too: `mis init` asks (default yes), or `this_computer` in `mis config`. Nothing is installed or changed for it: no `mis` user, no SSH, no key needed, so it's checked even while locked.
+
+| | Linux desktop (Ubuntu, Debian) | Mac |
+|---|---|---|
+| Read with | The same collector as servers, run directly | `sw_vers`, Safari's version, `softwareupdate --list`, `brew outdated --json=v2` |
+| Vulnerabilities | Exactly as a server: OSV, then KEV, EPSS and CVSS | Every CVE fixed by the macOS and Safari updates Apple offers it: all security releases newer than what's installed, up to the offered update (Apple security notes), then KEV, EPSS and CVSS like a server. A major upgrade is skipped while the current release is supported. |
+| End of life | Debian or Ubuntu dates | macOS dates (endoflife.date) |
+| Other | | Outdated Homebrew packages: one Normal finding (no CVE data), in the weekly summary |
+| Notification | One per CVE, button "This computer" | One per Apple update ("macOS 15.8.2 · fixes 197 vulnerabilities · 2 actively exploited"), button "This Mac" |
+| Button opens | A local terminal with the fix typed in | System Settings › Software Update |
+
+- It's checked with every match (every 6 h, and right after wake-up) and after its button is clicked; its findings use the name `this-mac` (Linux: `this-computer`), which no server may use.
+- If any part can't be read (e.g. `softwareupdate` fails, or Apple's notes are unreachable with no saved copy), the check reports an error and keeps the last findings: a missing answer never resolves anything.
 
 ---
 
@@ -458,6 +474,7 @@ The package layout is in `CLAUDE.md` (Layout).
 - Other alert channels (Telegram, email, ntfy)
 - Password login for the `mis` user (fallback where keys are impossible)
 - Auto-unlock on Linux desktops (Secret Service: GNOME Keyring, KWallet)
+- This computer on other systems (Windows, other Linux distributions); App Store and other apps on a Mac
 - Public release: Homebrew tap, signed release builds, Apple Developer ID signing and notarization
 - Optional online breach check for new passphrases (Have I Been Pwned range API)
 - Quiet hours, multiple users or teams
