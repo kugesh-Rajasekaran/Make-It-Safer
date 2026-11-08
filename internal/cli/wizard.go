@@ -211,8 +211,8 @@ func (w *wizard) servers() ([]string, error) {
 // the passphrase from step 1.
 func (w *wizard) service() (running, unlocked bool, err error) {
 	a := w.a
-	a.say("\n5. Background service\nIt checks your servers on a schedule and shows notifications. It starts at every\n" +
-		"login, locked, until it's unlocked with your passphrase.\n")
+	a.say("\n5. Background service\nMake-It-Safer runs in the background: it checks on a schedule and shows\n" +
+		"notifications. It starts every time you log in.\n")
 	ok, err := a.confirm("Install and start it now?", true)
 	if err != nil {
 		return false, false, err
@@ -235,7 +235,6 @@ func (w *wizard) service() (running, unlocked bool, err error) {
 		a.say("✗ The background service didn't start. See: mis service logs\n")
 		return false, false, nil
 	}
-	a.say("Unlocking it…\n")
 	pass := slices.Clone([]byte(w.pass)) // Call wipes what it sends
 	if err := daemon.Call(w.paths, daemon.Request{Op: daemon.OpUnlock, Passphrase: pass}, nil, 2*time.Minute); err != nil {
 		a.say("✗ %s\n  Unlock it later: mis unlock\n", apperr.MessageOf(err))
@@ -252,14 +251,16 @@ func (w *wizard) autoUnlock() (bool, error) {
 	if !keyring.Available() {
 		return false, nil
 	}
-	a.say("\nAfter a restart it can unlock itself when you log in, with an unlock key kept in\n" +
-		"your macOS Keychain. Your passphrase is still never stored.\n")
-	ok, err := a.confirm("Unlock automatically when you log in?", true)
+	a.say("\nAfter a restart, it needs unlocking before it can log in to your servers.\n" +
+		"  • Yes: it unlocks itself when you log in. An unlock key is kept in your macOS\n" +
+		"    Keychain; your passphrase is still never stored.\n" +
+		"  • No: you type your passphrase once after each restart (mis unlock).\n")
+	ok, err := a.confirm("Unlock automatically after a restart?", true)
 	if err != nil {
 		return false, err
 	}
 	if !ok {
-		a.say("Later: mis auto-unlock on\n")
+		a.say("OK: after each restart, run mis unlock. To change it later: mis auto-unlock on\n")
 		return false, nil
 	}
 	if a.unlocked == nil {
@@ -272,7 +273,7 @@ func (w *wizard) autoUnlock() (bool, error) {
 		a.say("✗ %s\n  Try again later: mis auto-unlock on\n", apperr.MessageOf(err))
 		return false, nil
 	}
-	a.say("✓ Auto-unlock is on.\n")
+	a.say("✓ Done: after a restart it unlocks itself when you log in.\n")
 	return true, nil
 }
 

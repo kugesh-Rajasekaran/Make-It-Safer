@@ -49,7 +49,7 @@ Run `mis init` and follow the steps. Every step after the passphrase can be skip
 | 2. Terminal | The app that opens when you click a server button. `default` is Terminal on macOS, your desktop's terminal on Linux. |
 | 3. Alerts | The CVSS score from which fixable vulnerabilities alert you (default 7), and from which early warnings come (default 9, or `off`). |
 | 4. Servers | First: **"Check this Mac too?"** (Enter = yes; on Linux "this computer"), see [This computer](#this-computer). Then adds your servers (see [Servers](#servers)). |
-| 5. Background service | Starts at every login and checks on a schedule. It's unlocked with the passphrase from step 1. On macOS you're then asked **"Unlock automatically when you log in?"** (Enter = yes): see [auto-unlock](#after-a-restart-unlock). |
+| 5. Background service | Starts at every login and checks on a schedule. It's unlocked with the passphrase from step 1. On macOS you're then asked **"Unlock automatically after a restart?"** (Enter = yes; your passphrase is never stored): see [auto-unlock](#after-a-restart-unlock). |
 | 6. Notifications | Shows a test notification. On macOS, allow notifications for **Make-It-Safer Notifier** and choose the **Alerts** style, so they stay on screen. |
 | 7. First check | Reads each server's package list and shows what's open. |
 
