@@ -29,7 +29,13 @@ func (c *Command) Empty() bool { return c.Root == "" }
 var (
 	packagePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]{0,127}(:[a-z0-9-]{1,32})?$`)
 	safeToken      = regexp.MustCompile(`^[A-Za-z0-9+.:_/=-]+$`)
-	versioned      = regexp.MustCompile(`[0-9]+\.[0-9]+`)
+	// A kernel's own packages carry its full version: linux-image-6.8.0-49-generic.
+	// Meta-packages may carry a release or series number (linux-generic-hwe-22.04,
+	// linux-oem-24.04, linux-generic-6.8) but never three parts.
+	kernelVersion = regexp.MustCompile(`[0-9]+\.[0-9]+\.[0-9]+`)
+	// Debian's build and source helpers, which have two-part series numbers
+	// (linux-kbuild-6.1) and never pull in a kernel.
+	kernelHelper = regexp.MustCompile(`^linux-(kbuild|config|source|doc|perf|compiler|support)-`)
 )
 
 // Kernel meta-packages and others that never pull in a new kernel.
@@ -109,11 +115,13 @@ func names(ps []inventory.Package) []string {
 }
 
 // kernelMetas returns the installed kernel meta-packages (linux-generic,
-// linux-image-amd64, …). Upgrading them installs the newest kernel.
+// linux-image-amd64, linux-generic-hwe-22.04, linux-oem-24.04, …). Upgrading
+// them installs the newest kernel of their flavour.
 func kernelMetas(inv *inventory.Inventory) []string {
 	var out []string
 	for _, p := range inv.Packages {
-		if strings.HasPrefix(p.Name, "linux-") && !versioned.MatchString(p.Name) && !notMeta[p.Name] && !strings.Contains(p.Name, ":") {
+		if strings.HasPrefix(p.Name, "linux-") && !kernelVersion.MatchString(p.Name) && !kernelHelper.MatchString(p.Name) &&
+			!notMeta[p.Name] && !strings.Contains(p.Name, ":") {
 			out = append(out, p.Name)
 		}
 	}

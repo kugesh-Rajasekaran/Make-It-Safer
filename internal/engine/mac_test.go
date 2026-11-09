@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -192,4 +193,102 @@ func TestThisMacEndOfLife(t *testing.T) {
 	if f == nil || f.Priority != findings.Urgent || !strings.Contains(f.Summary, "macOS 14") {
 		t.Fatalf("macOS 14 is past its end of life: %+v", f)
 	}
+}
+
+// Apple answering 200 with a page that is not a security note (an error page,
+// a changed layout) is no evidence that the updates fix nothing.
+func TestThisMacKeepsFindingsWhenAppleServesAnErrorPage(t *testing.T) {
+	var down atomic.Bool
+	e, paths := newMacEngine(t, &down)
+	mac := config.Server{Name: "this-mac", Local: true}
+	if err := inventory.Save(paths, mac.Name, macInventory()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Match(context.Background(), []config.Server{mac}); err != nil {
+		t.Fatal(err)
+	}
+	openBefore := countOpen(t, paths, "macos", "safari")
+	if openBefore != 12 {
+		t.Fatalf("%d open Apple findings, want 12", openBefore)
+	}
+
+	index, err := os.ReadFile("../feeds/apple/testdata/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	soft := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/index" {
+			_, _ = w.Write(index)
+			return
+		}
+		_, _ = w.Write([]byte("<html>Service unavailable</html>"))
+	}))
+	defer soft.Close()
+	later := e.Now().Add(8 * 24 * time.Hour) // every cached Apple page is stale
+	e.Apple.Feeds, e.Apple.IndexURL, e.Apple.Base = feeds.NewForTest(soft.URL), soft.URL+"/index", soft.URL
+	e.Apple.Now = func() time.Time { return later }
+
+	res, err := e.Match(context.Background(), []config.Server{mac})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Servers[0].Code == "" || len(res.Changes.Resolved) != 0 {
+		t.Fatalf("an Apple error page must not resolve findings: %+v, %d resolved", res.Servers[0], len(res.Changes.Resolved))
+	}
+	if got := countOpen(t, paths, "macos", "safari"); got != openBefore {
+		t.Fatalf("%d open Apple findings after the error page, want %d", got, openBefore)
+	}
+}
+
+// endoflife.date answering with an empty list must not read as "supported".
+func TestThisMacKeepsEndOfLifeFindingWhenDatesAreEmpty(t *testing.T) {
+	var down atomic.Bool
+	e, paths := newMacEngine(t, &down)
+	mac := config.Server{Name: "this-mac", Local: true}
+	old := macInventory([]inventory.AppleUpdate{}...)
+	old.OSVersion = "14.8.9"
+	if err := inventory.Save(paths, mac.Name, old); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Match(context.Background(), []config.Server{mac}); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := findings.Load(paths); st.Find("this-mac/end-of-life/macos-14") == nil {
+		t.Fatal("setup: no end-of-life finding for macOS 14")
+	}
+
+	empty := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "[]") }))
+	defer empty.Close()
+	e.EOL = &eol.Client{Feeds: feeds.NewForTest(empty.URL), API: empty.URL}
+
+	res, err := e.Match(context.Background(), []config.Server{mac})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Changes.Resolved) != 0 {
+		t.Fatalf("an empty answer resolved findings: %d", len(res.Changes.Resolved))
+	}
+	if len(res.Warnings) == 0 || !strings.Contains(res.Warnings[0], "end-of-life") {
+		t.Fatalf("warnings: %v", res.Warnings)
+	}
+	st, _ := findings.Load(paths)
+	if f := st.Find("this-mac/end-of-life/macos-14"); f == nil || !f.Open() {
+		t.Fatalf("the end-of-life finding is no longer open: %+v", f)
+	}
+}
+
+// countOpen counts the open findings from the given sources.
+func countOpen(t *testing.T, paths config.Paths, sources ...string) int {
+	t.Helper()
+	st, err := findings.Load(paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, f := range st.Findings {
+		if f.Open() && slices.Contains(sources, f.Source) {
+			n++
+		}
+	}
+	return n
 }

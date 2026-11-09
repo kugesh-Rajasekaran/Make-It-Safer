@@ -1,6 +1,7 @@
 package findings
 
 import (
+	"os"
 	"testing"
 	"time"
 
@@ -180,5 +181,85 @@ func TestEarlyWarningFindings(t *testing.T) {
 	f.Resolution = ResolutionNotAffected
 	if err := f.Transition(StateNew, now); err != nil || f.Resolution != "" {
 		t.Fatalf("reopened: %+v, %v", f, err)
+	}
+}
+
+// A restart that is pending again after an earlier one was done gets its
+// three days' grace again, instead of being High from the start.
+func TestReopenedRebootFindingGetsGraceAgain(t *testing.T) {
+	rules := config.Default().Rules
+	s := &Store{Checked: map[string]time.Time{}}
+	const id = "web/reboot/kernel"
+	day := 24 * time.Hour
+	// check does what a check does: classify with the first-seen time of the
+	// finding if it is still open, then merge.
+	check := func(now time.Time, pending bool) Changes {
+		var current []*Finding
+		if pending {
+			f := &Finding{ID: id, Server: "web", Kind: KindReboot, FirstSeen: now}
+			if old := s.Find(id); old != nil && old.Open() {
+				f.FirstSeen = old.FirstSeen
+			}
+			f.Priority = Classify(f, rules, now)
+			current = append(current, f)
+		}
+		return s.Merge("web", current, []Kind{KindReboot}, now)
+	}
+
+	check(t0, true)
+	if ch := check(t0.Add(4*day), true); len(ch.Escalated) != 1 || s.Find(id).Priority != High {
+		t.Fatalf("pending for four days: %+v, priority %s", ch, s.Find(id).Priority)
+	}
+	if ch := check(t0.Add(5*day), false); len(ch.Resolved) != 1 { // restarted
+		t.Fatalf("after the restart: %+v", ch)
+	}
+
+	reopened := t0.Add(10 * day) // a new kernel is installed
+	if ch := check(reopened, true); len(ch.Reopened) != 1 || !s.Find(id).FirstSeen.Equal(reopened) {
+		t.Fatalf("reopened: %+v, first seen %v", ch, s.Find(id).FirstSeen)
+	}
+	if ch := check(reopened.Add(30*time.Minute), true); len(ch.Escalated) != 0 || s.Find(id).Priority != Normal {
+		t.Fatalf("30 minutes later: %+v, priority %s; want normal during the grace period", ch, s.Find(id).Priority)
+	}
+	if ch := check(reopened.Add(4*day), true); len(ch.Escalated) != 1 || s.Find(id).Priority != High {
+		t.Fatalf("after the grace period: %+v, priority %s", ch, s.Find(id).Priority)
+	}
+}
+
+// An escalation of an acknowledged finding must not restart the clock: only
+// a finding that had been resolved is a new occurrence.
+func TestEscalationKeepsFirstSeen(t *testing.T) {
+	s := &Store{Checked: map[string]time.Time{}}
+	kinds := []Kind{KindVulnerability}
+	s.Merge("web", []*Finding{vuln("CVE-1", Normal)}, kinds, t0)
+	f := s.Find("web/vulnerability/CVE-1/openssh")
+	_ = f.Transition(StateSnoozed, t0)
+	s.Merge("web", []*Finding{vuln("CVE-1", Urgent)}, kinds, t0.Add(time.Hour))
+	if f.State != StateNew || !f.FirstSeen.Equal(t0) {
+		t.Fatalf("state %s, first seen %v; want new and %v", f.State, f.FirstSeen, t0)
+	}
+}
+
+// A hand-edited file with null entries must not crash the daemon.
+func TestLoadDropsNullFindings(t *testing.T) {
+	paths := config.PathsAt(t.TempDir())
+	if err := paths.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	data := `{"version":1,"findings":[null,{"id":"web/vulnerability/CVE-1/openssh","server":"web","kind":"vulnerability","state":"new"},null]}`
+	if err := os.WriteFile(file(paths), []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Load(paths)
+	if err != nil || len(s.Findings) != 1 || s.Find("web/vulnerability/CVE-1/openssh") == nil {
+		t.Fatalf("Load() = %+v, %v", s, err)
+	}
+	err = Update(paths, func(s *Store) error {
+		s.Prune(t0)
+		s.Forget("db")
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }

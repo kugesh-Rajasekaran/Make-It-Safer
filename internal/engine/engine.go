@@ -4,13 +4,14 @@ package engine
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
-
-	"golang.org/x/crypto/ssh"
 
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/apperr"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/config"
@@ -24,7 +25,6 @@ import (
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/findings"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/inventory"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/local"
-	"github.com/kugesh-rajasekaran/make-it-safer/internal/sshx"
 )
 
 // Engine checks servers against the vulnerability data.
@@ -70,67 +70,12 @@ type Result struct {
 	Warnings []string         `json:"warnings,omitempty"`
 }
 
-// Refresh saves each server's package list: this computer's is read
-// directly; servers are logged in to as "mis", which needs signer (without
-// it they're skipped). It returns the servers that failed, with why.
-func (e *Engine) Refresh(ctx context.Context, signer ssh.Signer, servers []config.Server) map[string]error {
-	hk := sshx.HostKeys{Path: e.Paths.KnownHosts}
-	failed := map[string]error{}
-	for _, s := range servers {
-		if !s.Local && signer == nil {
-			continue
-		}
-		e.Log.Debug("refresh", "status", "start", "server", s.Name)
-		var inv *inventory.Inventory
-		var err error
-		if s.Local {
-			inv, err = e.Local(ctx, e.Now())
-		} else {
-			inv, err = collect(ctx, sshx.TargetOf(s), hk, signer, e.Now())
-		}
-		if err == nil {
-			err = inventory.Save(e.Paths, s.Name, inv)
-		}
-		if err != nil {
-			e.Log.Warn("refresh", "status", "error", "server", s.Name, "error", err)
-			failed[s.Name] = err
-			continue
-		}
-		e.Log.Debug("refresh", "status", "success", "server", s.Name, "packages", len(inv.Packages))
-	}
-	return failed
-}
-
-func collect(ctx context.Context, t sshx.Target, hk sshx.HostKeys, signer ssh.Signer, now time.Time) (*inventory.Inventory, error) {
-	c, err := sshx.Dial(ctx, t, hk, signer)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = c.Close() }()
-	out, err := c.Collect(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return inventory.Parse(out, now)
-}
-
-// Check refreshes package lists when refresh is set (servers only with a
-// signer, see Refresh), then matches the saved lists.
-func (e *Engine) Check(ctx context.Context, refresh bool, signer ssh.Signer, servers []config.Server) (*Result, error) {
-	failed := map[string]error{}
-	if refresh {
-		failed = e.Refresh(ctx, signer, servers)
-	}
-	res, err := e.Match(ctx, servers)
-	if err != nil {
-		return nil, err
-	}
-	for i, r := range res.Servers {
-		if err, ok := failed[r.Server]; ok && r.Code == "" {
-			res.Servers[i].Code, res.Servers[i].Error = apperr.CodeOf(err), "package list not refreshed: "+apperr.MessageOf(err)
-		}
-	}
-	return res, nil
+// newResult returns an empty result. Its lists are empty, not nil, so they
+// are [] in JSON and not null.
+func newResult() *Result {
+	return &Result{Changes: findings.Changes{
+		New: []*findings.Finding{}, Reopened: []*findings.Finding{}, Escalated: []*findings.Finding{}, Resolved: []*findings.Finding{},
+	}}
 }
 
 // serverWork is one server's inventory and the queries asked for it.
@@ -146,7 +91,7 @@ type serverWork struct {
 // records the findings.
 func (e *Engine) Match(ctx context.Context, servers []config.Server) (*Result, error) {
 	now := e.Now()
-	res := &Result{}
+	res := newResult()
 
 	catalog, err := e.KEV.Refresh(ctx)
 	if err != nil {
@@ -228,11 +173,11 @@ func (e *Engine) Match(ctx context.Context, servers []config.Server) (*Result, e
 		current[w.server.Name] = fs
 		all = append(all, fs...)
 	}
-	e.enrich(ctx, all)
 	previous, err := findings.Load(e.Paths)
 	if err != nil {
 		return nil, err
 	}
+	res.Warnings = append(res.Warnings, e.enrich(ctx, all, previous)...)
 	for _, f := range all {
 		f.FirstSeen = now
 		if old := previous.Find(f.ID); old != nil && old.Open() {
@@ -256,6 +201,11 @@ func (e *Engine) Match(ctx context.Context, servers []config.Server) (*Result, e
 				kinds = append(kinds, findings.KindEndOfLife)
 			}
 			ch := st.Merge(w.server.Name, fs, kinds, now)
+			if w.result.First { // the first check is a baseline: no notification per finding, whichever process ran it
+				for _, f := range ch.New {
+					_ = f.Transition(findings.StateNotified, now)
+				}
+			}
 			res.Changes.New = append(res.Changes.New, ch.New...)
 			res.Changes.Reopened = append(res.Changes.Reopened, ch.Reopened...)
 			res.Changes.Escalated = append(res.Changes.Escalated, ch.Escalated...)
@@ -324,8 +274,12 @@ func (e *Engine) fetchVulns(ctx context.Context, refs [][]osv.Ref) (map[string]*
 }
 
 // enrich adds CVSS scores and EPSS for findings that can alert: those with
-// a fix, or all of them when rules.unfixed is "all".
-func (e *Engine) enrich(ctx context.Context, all []*findings.Finding) {
+// a fix, or all of them when rules.unfixed is "all". When a lookup fails, a
+// finding keeps the score it had in previous: storing 0 instead would lower
+// its priority, and when the source answered again the rise would count as an
+// escalation and bring back findings you had accepted or snoozed. It returns
+// warnings for the lookups that failed.
+func (e *Engine) enrich(ctx context.Context, all []*findings.Finding, previous *findings.Store) []string {
 	need := map[string][]*findings.Finding{}
 	for _, f := range all {
 		if f.Kind == findings.KindVulnerability && f.CVE != "" && (f.HasFix() || e.Rules.Unfixed == config.UnfixedAll) {
@@ -333,14 +287,23 @@ func (e *Engine) enrich(ctx context.Context, all []*findings.Finding) {
 		}
 	}
 	if len(need) == 0 {
-		return
+		return nil
 	}
+	var warnings []string
 	cves := make([]string, 0, len(need))
 	for cve := range need {
 		cves = append(cves, cve)
 	}
 	if scores, err := e.EPSS.Scores(ctx, cves); err != nil {
 		e.Log.Warn("epss", "status", "error", "error", err)
+		warnings = append(warnings, "EPSS unavailable, using the last known scores: "+apperr.MessageOf(err))
+		for _, fs := range need {
+			for _, f := range fs {
+				if old := previous.Find(f.ID); old != nil {
+					f.EPSS = old.EPSS
+				}
+			}
+		}
 	} else {
 		for cve, s := range scores {
 			for _, f := range need[cve] {
@@ -349,8 +312,11 @@ func (e *Engine) enrich(ctx context.Context, all []*findings.Finding) {
 		}
 	}
 
-	var wg sync.WaitGroup
-	slots := make(chan struct{}, 8)
+	var (
+		wg     sync.WaitGroup
+		failed atomic.Int32 // records that could not be read, not counting CVEs the CVE List doesn't have
+		slots  = make(chan struct{}, 8)
+	)
 	for cve, fs := range need {
 		wg.Add(1)
 		slots <- struct{}{}
@@ -359,6 +325,14 @@ func (e *Engine) enrich(ctx context.Context, all []*findings.Finding) {
 			r, err := e.CVE.Get(ctx, cve)
 			if err != nil {
 				e.Log.Debug("cve record", "status", "error", "cve", cve, "error", err)
+				if !errors.Is(err, feeds.ErrNotFound) {
+					failed.Add(1)
+				}
+				for _, f := range fs {
+					if old := previous.Find(f.ID); old != nil {
+						f.Score = old.Score
+					}
+				}
 				return
 			}
 			for _, f := range fs { // each finding belongs to exactly one CVE
@@ -367,6 +341,10 @@ func (e *Engine) enrich(ctx context.Context, all []*findings.Finding) {
 		}()
 	}
 	wg.Wait()
+	if n := failed.Load(); n > 0 {
+		warnings = append(warnings, fmt.Sprintf("%d CVE records unavailable, using the last known scores", n))
+	}
+	return warnings
 }
 
 // vulnFindings turns one server's OSV matches into findings, one per CVE

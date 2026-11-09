@@ -3,6 +3,8 @@ package engine
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -168,4 +170,60 @@ func TestEarlyWarningsOff(t *testing.T) {
 			t.Errorf("downloaded %v while disabled", d.fetched)
 		}
 	})
+}
+
+// The CVE List and OSV record caches get one file per record; old files are
+// deleted, but only once a day.
+func TestEarlyWarningsPrunesOldCacheFiles(t *testing.T) {
+	d := &fakeData{}
+	e, _ := newEngine(t, d)
+	ctx := context.Background()
+	now := e.Now()
+	d.set(func() { d.log = deltaLog("2026-11-05T08:00:00Z new:CVE-2026-0009") })
+	if _, err := e.EarlyWarnings(ctx, nil); err != nil { // the first run only notes where the log is
+		t.Fatal(err)
+	}
+
+	write := func(dir, name string, age time.Duration) string {
+		t.Helper()
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte("{}"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(p, now.Add(-age), now.Add(-age)); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	exists := func(p string) bool { _, err := os.Stat(p); return err == nil }
+	day := 24 * time.Hour
+	oldCVE := write(e.CVE.Cache, "CVE-2026-0001.json", 40*day)
+	newCVE := write(e.CVE.Cache, "CVE-2026-0002.json", 2*day)
+	oldOSV := write(e.OSV.Cache, "UBUNTU-CVE-2026-0001.json", 40*day)
+
+	if _, err := e.EarlyWarnings(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	if exists(oldCVE) || exists(oldOSV) || !exists(newCVE) {
+		t.Fatalf("after the run: old CVE record kept=%v, old OSV record kept=%v, recent record kept=%v", exists(oldCVE), exists(oldOSV), exists(newCVE))
+	}
+
+	// Within the same day nothing is cleaned again; the next day it is.
+	again := write(e.CVE.Cache, "CVE-2026-0003.json", 40*day)
+	if _, err := e.EarlyWarnings(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !exists(again) {
+		t.Fatal("the caches were cleaned twice in one day")
+	}
+	e.Now = func() time.Time { return now.Add(25 * time.Hour) }
+	if _, err := e.EarlyWarnings(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	if exists(again) {
+		t.Fatal("the caches were not cleaned the next day")
+	}
 }
