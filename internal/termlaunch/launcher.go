@@ -2,10 +2,12 @@ package termlaunch
 
 import (
 	"cmp"
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -53,17 +55,75 @@ func (l Launcher) Open(script string) error {
 	return nil
 }
 
+// How long a terminal gets to report failure. macOS `open` returns once the
+// request is accepted (or refused: no such app), so it is waited for. Every
+// other terminal keeps running while its window is open: only one that
+// exits right away with an error has failed. Variables so tests can shorten them.
+var (
+	openTimeout = 10 * time.Second
+	exitGrace   = 500 * time.Millisecond
+)
+
+func (l Launcher) goos() string { return cmp.Or(l.GOOS, runtime.GOOS) }
+
 func (l Launcher) start(name string, args ...string) error {
 	if l.Start != nil {
 		return l.Start(name, args...)
 	}
+	if l.goos() == "darwin" && filepath.Base(name) == "open" {
+		ctx, cancel := context.WithTimeout(context.Background(), openTimeout)
+		defer cancel()
+		var stderr headBuffer
+		cmd := exec.CommandContext(ctx, name, args...) //nolint:gosec // a terminal app chosen in your config, running our own script
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			return launchFailed(name, err, stderr.String())
+		}
+		return nil
+	}
+	var stderr headBuffer
 	cmd := exec.Command(name, args...) //nolint:gosec // a terminal app chosen in your config, running our own script
+	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
 		return apperr.Wrap(apperr.TerminalFailed, err, "cannot open the terminal "+name)
 	}
-	go func() { _ = cmd.Wait() }()
+	exited := make(chan error, 1)
+	go func() { exited <- cmd.Wait() }()
+	select {
+	case err := <-exited:
+		if err != nil {
+			return launchFailed(name, err, stderr.String())
+		}
+	case <-time.After(exitGrace): // still running: its window is open
+	}
 	return nil
 }
+
+// launchFailed describes a terminal that did not open, with what it said.
+func launchFailed(name string, err error, said string) error {
+	msg := "cannot open the terminal " + name
+	if said = printable(strings.Join(strings.Fields(said), " ")); said != "" {
+		msg += ": " + said
+	} else {
+		msg += ": " + err.Error()
+	}
+	return apperr.Wrap(apperr.TerminalFailed, err, msg)
+}
+
+// headBuffer keeps the first bytes written to it and discards the rest, so a
+// terminal's chatter can't grow without bound.
+type headBuffer struct{ b []byte }
+
+const headBufferMax = 512
+
+func (h *headBuffer) Write(p []byte) (int, error) {
+	if room := headBufferMax - len(h.b); room > 0 {
+		h.b = append(h.b, p[:min(room, len(p))]...)
+	}
+	return len(p), nil
+}
+
+func (h *headBuffer) String() string { return string(h.b) }
 
 // argv returns the command that opens path in the configured terminal.
 func (l Launcher) argv(path string) (string, []string, error) {
@@ -78,11 +138,7 @@ func (l Launcher) argv(path string) (string, []string, error) {
 		}
 		return fields[0], fields[1:], nil
 	}
-	goos := l.GOOS
-	if goos == "" {
-		goos = runtime.GOOS
-	}
-	if goos == "darwin" {
+	if l.goos() == "darwin" {
 		return macArgv(app, path)
 	}
 	return l.linuxArgv(app, path)
@@ -106,12 +162,14 @@ func macArgv(app, path string) (string, []string, error) {
 	return "", nil, apperr.New(apperr.TerminalNotFound, "terminal "+app+" isn't available on macOS; set terminal.app in config.yaml")
 }
 
-// linuxTerminals lists terminals and how to make them run a script, in the
-// order the default choice tries them.
-var linuxTerminals = []struct {
+type linuxTerminal struct {
 	name string
 	args []string
-}{
+}
+
+// linuxTerminals lists terminals and how to make them run a script, in the
+// order the default choice tries them.
+var linuxTerminals = []linuxTerminal{
 	{"x-terminal-emulator", []string{"-e"}}, // Debian/Ubuntu's configured default
 	{"gnome-terminal", []string{"--"}},
 	{"konsole", []string{"-e"}},
@@ -132,7 +190,11 @@ func (l Launcher) linuxArgv(app, path string) (string, []string, error) {
 	if app == "default" {
 		if t := os.Getenv("TERMINAL"); t != "" && !strings.ContainsAny(t, " /") {
 			if _, err := look(t); err == nil {
-				return t, []string{"-e", path}, nil
+				args := []string{"-e"} // the usual way; the table knows the terminals that differ
+				if i := slices.IndexFunc(linuxTerminals, func(lt linuxTerminal) bool { return lt.name == t }); i >= 0 {
+					args = linuxTerminals[i].args
+				}
+				return t, append(append([]string{}, args...), path), nil
 			}
 		}
 		for _, t := range linuxTerminals {
@@ -163,8 +225,7 @@ func (l Launcher) Available() error {
 	if look == nil {
 		look = exec.LookPath
 	}
-	goos := cmp.Or(l.GOOS, runtime.GOOS)
-	if goos == "darwin" && l.Terminal.App != "custom" {
+	if l.goos() == "darwin" && l.Terminal.App != "custom" {
 		bundle, ok := macApps[l.Terminal.App]
 		if !ok {
 			return nil // Terminal
