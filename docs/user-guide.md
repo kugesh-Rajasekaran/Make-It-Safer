@@ -21,21 +21,31 @@ Make-It-Safer (`mis`) watches your Ubuntu and Debian servers for vulnerabilities
 
 | | |
 |---|---|
-| Your computer | macOS 13 or later, or a Linux desktop (GNOME, KDE, …) |
-| Tools | Go 1.26 or later. On macOS also the Xcode command line tools (`xcode-select --install`), for the notification helper. |
+| Your computer | macOS 13 or later (Apple Silicon or Intel), or a Linux desktop (GNOME, KDE, …; x86_64 or ARM) |
 | Servers | Ubuntu 22.04/24.04 LTS or Debian 12/13, with your usual `ssh` login that can use `sudo` (or is `root`) |
 
 **Install:**
 
 ```bash
-git clone https://github.com/kugesh-Rajasekaran/Make-It-Safer.git
-cd Make-It-Safer
-make install
+curl -fsSL https://raw.githubusercontent.com/kugesh-Rajasekaran/Make-It-Safer/main/install.sh | sh
 ```
 
+- The [install script](../install.sh) downloads the latest release for your system from GitHub Releases and checks its SHA-256 checksum. It needs no sudo.
 - `mis` goes to `~/.local/bin`. If that isn't on your `PATH`, add it to `~/.zshrc` or `~/.bashrc`: `export PATH="$HOME/.local/bin:$PATH"`.
-- On macOS, `make install` also builds the notification helper (`Make-It-Safer Notifier.app`) into `~/Applications`.
-- To update later: `git pull && make install`. A running background service restarts with the new version; unlock it again. With auto-unlock on, macOS asks once to let the new version use your Keychain: click **Always Allow** (or **Allow**).
+- On macOS it also installs the notification helper (`Make-It-Safer Notifier.app`) into `~/Applications`.
+- A specific version: `curl -fsSL …/install.sh | MIS_VERSION=v0.1.0 sh`.
+
+**Update:** run the same command again.
+- A running background service restarts with the new version. Unlock it again.
+- With auto-unlock on, macOS asks once to let the new version use your Keychain: click **Always Allow** (or **Allow**).
+
+**From source instead:** you need Go 1.26 or later, and on macOS the Xcode command line tools (`xcode-select --install`) for the notification helper.
+
+```bash
+git clone https://github.com/kugesh-Rajasekaran/Make-It-Safer.git
+cd Make-It-Safer
+make install      # update later: git pull && make install
+```
 
 ---
 
@@ -212,7 +222,9 @@ The settings live in `config.yaml` in Make-It-Safer's folder (`~/Library/Applica
 
 1. Remove each server: `mis server remove <name>`. This deletes the `mis` user on the server, through your own login.
 2. `mis auto-unlock off`, if it's on. This removes the unlock key from your Keychain.
-3. `make uninstall` (in the repository) removes the service, `mis` and the macOS helper.
+3. Remove the service, `mis` and the macOS helper:
+   - Installed with the script: `mis service uninstall`, then `rm ~/.local/bin/mis`, and on macOS `rm -rf ~/Applications/"Make-It-Safer Notifier.app"`.
+   - Built from source: `make uninstall` (in the repository).
 4. Delete Make-It-Safer's folder (see [Settings](#settings)) to remove your settings and encrypted key.
 
 ---

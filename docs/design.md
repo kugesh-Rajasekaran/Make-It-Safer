@@ -25,7 +25,7 @@ Make-It-Safer is a command-line tool (`mis`) for people who run a few VPS server
 | Language | Go (single binary). Small Swift helper app for macOS notifications. |
 | Your computer | macOS first, then Linux desktop |
 | Servers (v1) | Ubuntu and Debian. AlmaLinux/Rocky later. |
-| Audience (v1) | Personal use: installed from source. No public release, no Apple notarization. |
+| Audience (v1) | Personal use. Installed with `install.sh` from GitHub Releases, or from source. No Apple notarization: the macOS helper is ad-hoc signed. |
 | Confirmed vulnerabilities | OSV.dev API: the server's distro release, package names and versions in; matching vulnerabilities out |
 | Early warning (unconfirmed) | Official CVE List, polled every 15 min. Only **severity ≥ 9** or actively exploited, by default. |
 | Prioritisation | CISA KEV (actively exploited), EPSS (exploit probability), CVSS, OS end-of-life |
@@ -448,7 +448,7 @@ The computer `mis` runs on can be checked too: `mis init` asks (default yes), or
 | Linux notifications | `godbus/dbus/v5` |
 | macOS notifications | Swift helper app (SwiftPM), UserNotifications framework |
 | Config | YAML (`go.yaml.in/yaml/v3`, the maintained successor of `gopkg.in/yaml.v3`); state as JSON with atomic writes |
-| Install | From source: `make install` builds `mis` and the macOS helper (ad-hoc signed) |
+| Install | `install.sh` downloads the release archive for the OS and processor, checks its SHA-256 checksum and installs without sudo. A version tag runs `.github/workflows/release.yml`, which builds macOS (arm64, amd64; helper universal, ad-hoc signed) and Linux (amd64, arm64) archives. From source: `make install`. |
 
 The package layout is in `CLAUDE.md` (Layout).
 
@@ -479,6 +479,6 @@ The package layout is in `CLAUDE.md` (Layout).
 - Password login for the `mis` user (fallback where keys are impossible)
 - Auto-unlock on Linux desktops (Secret Service: GNOME Keyring, KWallet)
 - This computer on other systems (Windows, other Linux distributions); App Store and other apps on a Mac
-- Public release: Homebrew tap, signed release builds, Apple Developer ID signing and notarization
+- Homebrew tap; Apple Developer ID signing and notarization of the release builds
 - Optional online breach check for new passphrases (Have I Been Pwned range API)
 - Quiet hours, multiple users or teams
