@@ -73,7 +73,8 @@ func OpenFix(paths config.Paths, cfg *config.Config, server, key string) error {
 // softwareUpdateURL opens System Settings › General › Software Update.
 const softwareUpdateURL = "x-apple.systempreferences:com.apple.Software-Update-Settings.extension"
 
-func openSoftwareUpdate() error {
+// openSoftwareUpdate is a variable so tests can replace it.
+var openSoftwareUpdate = func() error {
 	if err := exec.Command("/usr/bin/open", softwareUpdateURL).Run(); err != nil {
 		return apperr.Wrap(apperr.TerminalFailed, err, "cannot open System Settings › Software Update")
 	}
@@ -175,6 +176,10 @@ func (d *Daemon) onClick(ev notify.Event) {
 		} else {
 			err = d.openLocal("pick", strings.TrimPrefix(id, "cve:"))
 		}
+	case strings.HasPrefix(id, "apple:"):
+		// One notification per Apple update: the button and the notification
+		// itself both open Software Update on this Mac.
+		err = d.fix(config.LocalName(), id)
 	case strings.HasPrefix(id, string(findings.KindReboot)+":"):
 		err = d.fix(strings.TrimPrefix(id, string(findings.KindReboot)+":"), id)
 	case strings.HasPrefix(id, hostKeyPrefix):
