@@ -17,7 +17,6 @@ import (
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/config"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/daemon"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/findings"
-	"github.com/kugesh-rajasekaran/make-it-safer/internal/notify"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/vault"
 )
 
@@ -32,10 +31,15 @@ func (a *app) daemonCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// Before the notifier: it takes over the helper's socket, which a
+			// second daemon must not do to the one that is running.
+			if daemon.Running(paths) {
+				return apperr.New(apperr.DaemonAlreadyRunning, "the background service is already running")
+			}
 			log := slog.New(slog.NewTextHandler(a.stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
-			n := notify.Desktop(ctx, paths, log)
+			n := a.desktop(ctx, paths, log)
 			defer func() { _ = n.Close() }()
 			return daemon.New(paths, version, log, n).Run(ctx)
 		},
@@ -112,7 +116,7 @@ func (a *app) statusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			view := statusView{}
+			view := statusView{Servers: []serverStatus{}}
 			var s daemon.Status
 			if err := daemon.Call(paths, daemon.Request{Op: daemon.OpStatus}, &s, 10*time.Second); err == nil {
 				view.Service = &s
@@ -194,11 +198,13 @@ func (a *app) serviceCmd() *cobra.Command {
 	}, &cobra.Command{
 		Use: "uninstall", Short: "Stop and remove the background service", Args: cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
-			paths, _, err := a.setup()
+			// Only the paths are needed, so this works when config.yaml is
+			// missing or broken: the service can still be removed.
+			paths, err := config.DefaultPaths()
 			if err != nil {
 				return err
 			}
-			if err := daemon.UninstallService(paths); err != nil {
+			if err := a.uninstallService(paths); err != nil {
 				return err
 			}
 			return a.emit(map[string]bool{"installed": false}, func(w io.Writer) {

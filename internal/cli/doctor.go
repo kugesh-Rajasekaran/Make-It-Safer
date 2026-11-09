@@ -14,10 +14,11 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/apperr"
+	"github.com/kugesh-rajasekaran/make-it-safer/internal/config"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/daemon"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/doctor"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/feeds"
-	"github.com/kugesh-rajasekaran/make-it-safer/internal/findings"
+	"github.com/kugesh-rajasekaran/make-it-safer/internal/inventory"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/keyring"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/termlaunch"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/vault"
@@ -37,10 +38,6 @@ func (a *app) doctorCmd() *cobra.Command {
 			var s daemon.Status
 			if err := daemon.Call(paths, daemon.Request{Op: daemon.OpStatus}, &s, 10*time.Second); err == nil {
 				status = &s
-			}
-			st, err := findings.Load(paths)
-			if err != nil {
-				return err
 			}
 			userHome, _ := os.UserHomeDir()
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -64,11 +61,11 @@ func (a *app) doctorCmd() *cobra.Command {
 			}
 			var reachable doctor.Result
 			_ = a.withSpinner("Checking the data sources", func() error {
-				reachable = doctor.Reachable(ctx, feeds.New(version), doctor.Sources)
+				reachable = doctor.Reachable(ctx, feeds.New(version), doctor.SourcesFor(runtime.GOOS, cfg.ThisComputer))
 				return nil
 			})
 			results = append(results, reachable,
-				doctor.Servers(cfg.Checked(), st.Checked, time.Now()),
+				doctor.Servers(cfg.Checked(), packageListTimes(paths, cfg.Checked()), cfg.Schedule.ListStaleAfter(), time.Now()),
 				doctor.Data(status, time.Now()),
 			)
 
@@ -79,6 +76,19 @@ func (a *app) doctorCmd() *cobra.Command {
 			return a.emit(results, human)
 		},
 	}
+}
+
+// packageListTimes returns when each server's package list was read: the
+// age of the data, not of the last match against it. Servers without a
+// saved list are left out.
+func packageListTimes(paths config.Paths, servers []config.Server) map[string]time.Time {
+	times := map[string]time.Time{}
+	for _, srv := range servers {
+		if inv, err := inventory.Load(paths, srv.Name); err == nil {
+			times[srv.Name] = inv.CollectedAt
+		}
+	}
+	return times
 }
 
 func printDoctor(w io.Writer, results []doctor.Result) {

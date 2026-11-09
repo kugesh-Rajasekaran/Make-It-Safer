@@ -171,7 +171,11 @@ func (a *app) change(paths config.Paths, cfg *config.Config, s *screen, value fu
 	if err := next.Save(paths.Config); err != nil {
 		return failed(err), false, nil
 	}
+	wasChecked := cfg.ThisComputer
 	*cfg = next
+	if err := forgetIfNoLongerChecked(paths, wasChecked, cfg); err != nil {
+		return failed(err), true, nil
+	}
 	return green("✓ Saved: ") + set.Label + " → " + set.Show(cfg), true, nil
 }
 

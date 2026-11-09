@@ -25,6 +25,12 @@ type initResult struct {
 	AutoUnlock   bool     `json:"auto_unlock"`   // it unlocks itself when you log in
 }
 
+// configRestored is the result of mis init when it only re-created config.yaml.
+type configRestored struct {
+	Home           string `json:"home"`
+	ConfigRestored bool   `json:"config_restored"`
+}
+
 func (a *app) initCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "init",
@@ -42,6 +48,9 @@ func (a *app) runInit() error {
 		return err
 	}
 	if _, err := os.Stat(paths.KeyFile); err == nil {
+		if !paths.Initialized() {
+			return a.restoreConfig(paths)
+		}
 		return apperr.New(apperr.VaultKeyExists, "Make-It-Safer is already set up; to change your passphrase run: mis passphrase change")
 	}
 	if err := paths.Ensure(); err != nil {
@@ -88,6 +97,27 @@ func (a *app) runInit() error {
 		return err
 	}
 	return a.emit(res, func(out io.Writer) { printInitResult(out, res) })
+}
+
+// restoreConfig handles a key without a config.yaml (the file was deleted).
+// Every other command says "run: mis init" then, and init must not answer
+// "already set up". It writes the default settings and leaves the key alone.
+func (a *app) restoreConfig(paths config.Paths) error {
+	if err := paths.Ensure(); err != nil {
+		return err
+	}
+	if err := paths.CheckPermissions(); err != nil {
+		return err
+	}
+	cfg := config.Default()
+	if err := cfg.Save(paths.Config); err != nil {
+		return err
+	}
+	return a.emit(configRestored{Home: paths.Home, ConfigRestored: true}, func(w io.Writer) {
+		_, _ = fmt.Fprintf(w, "✓ %s was missing, so it was created again with the default settings.\n"+
+			"  Your key and passphrase are unchanged. Servers that were listed in the old file are not:\n"+
+			"  add them again with: mis server add. Change settings with: mis config\n", paths.Config)
+	})
 }
 
 func printInitResult(w io.Writer, res initResult) {

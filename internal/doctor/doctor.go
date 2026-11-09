@@ -19,6 +19,7 @@ import (
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/config"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/daemon"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/feeds"
+	"github.com/kugesh-rajasekaran/make-it-safer/internal/feeds/apple"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/feeds/cvelist"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/feeds/eol"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/feeds/epss"
@@ -170,6 +171,18 @@ var Sources = []Source{
 	{"endoflife.date", eol.DefaultAPI + "/ubuntu.json", true},
 }
 
+// AppleSource is Apple's security notes, which only a Mac that checks itself uses.
+var AppleSource = Source{"Apple security notes", apple.IndexURL, false}
+
+// SourcesFor lists the data sources to try on an OS: Apple's security notes
+// count only on a Mac that checks itself (this_computer is on).
+func SourcesFor(goos string, thisComputer bool) []Source {
+	if goos == "darwin" && thisComputer {
+		return append(slices.Clone(Sources), AppleSource)
+	}
+	return Sources
+}
+
 // Reachable checks that every data source answers.
 func Reachable(ctx context.Context, fc *feeds.Client, sources []Source) Result {
 	var failed, hosts []string
@@ -194,32 +207,41 @@ func Reachable(ctx context.Context, fc *feeds.Client, sources []Source) Result {
 	return Result{Name: "Data sources", Level: OK, Detail: fmt.Sprintf("all %d answer", len(sources))}
 }
 
-// staleAfter: package lists refresh every 12 hours, so a day allows one miss.
-const staleAfter = 26 * time.Hour
-
-// Servers checks that every server was checked recently. checked maps
-// server names to their last check.
-func Servers(servers []config.Server, checked map[string]time.Time, now time.Time) Result {
+// Servers checks that every server's package list was read recently: not
+// longer ago than limit (config.Schedule.ListStaleAfter). refreshed maps
+// server names to when their list was read. A server can be matched often
+// (against the list it has) and still have an old list. This computer is
+// read again at every match, so it is left out.
+func Servers(servers []config.Server, refreshed map[string]time.Time, limit time.Duration, now time.Time) Result {
 	r := Result{Name: "Servers"}
 	if len(servers) == 0 {
 		r.Level, r.Detail, r.Fix = Warn, "no servers yet", "mis server add"
 		return r
 	}
 	var stale []string
+	remote := 0
 	for _, s := range servers {
-		t, ok := checked[s.Name]
+		if s.Local {
+			continue
+		}
+		remote++
+		t, ok := refreshed[s.Name]
 		switch {
 		case !ok:
-			stale = append(stale, s.Name+": never checked")
-		case now.Sub(t) > staleAfter:
-			stale = append(stale, fmt.Sprintf("%s: last checked %s ago", s.Name, now.Sub(t).Round(time.Hour)))
+			stale = append(stale, s.Name+": no package list yet")
+		case now.Sub(t) > limit:
+			stale = append(stale, fmt.Sprintf("%s: package list is %s old", s.Name, now.Sub(t).Round(time.Hour)))
 		}
 	}
 	if len(stale) > 0 {
 		r.Level, r.Detail, r.Fix = Warn, strings.Join(stale, "; "), "unlock the background service (mis unlock), or run: mis check"
 		return r
 	}
-	r.Level, r.Detail = OK, fmt.Sprintf("all %d checked in the last day", len(servers))
+	if remote == 0 { // only this computer, which is read directly on every check
+		r.Level, r.Detail = OK, "no servers; only this computer is checked"
+		return r
+	}
+	r.Level, r.Detail = OK, fmt.Sprintf("all %d package lists read recently", remote)
 	return r
 }
 
@@ -236,7 +258,10 @@ func Data(status *daemon.Status, now time.Time) Result {
 	case match == nil || match.LastOK.IsZero():
 		r.Level, r.Detail = Warn, "no successful check yet"
 	case now.Sub(match.LastOK) > 24*time.Hour:
-		r.Level, r.Detail = Fail, fmt.Sprintf("the last successful check was %s ago (%s)", now.Sub(match.LastOK).Round(time.Hour), match.LastError)
+		r.Level, r.Detail = Fail, fmt.Sprintf("the last successful check was %s ago", now.Sub(match.LastOK).Round(time.Hour))
+		if match.LastError != "" {
+			r.Detail += " (" + match.LastError + ")"
+		}
 		r.Fix = "see: mis service logs"
 	case early != nil && early.LastError != "" && now.Sub(early.LastOK) > time.Hour:
 		r.Level, r.Detail, r.Fix = Warn, "early warnings are failing: "+early.LastError, "see: mis service logs"

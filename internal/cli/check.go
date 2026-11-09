@@ -140,6 +140,8 @@ func subject(f *findings.Finding) string {
 		return "restart needed"
 	case findings.KindEndOfLife:
 		return f.Installed + " end of support"
+	case findings.KindUpdates:
+		return "Homebrew updates"
 	}
 	return f.CVE + " (" + f.Source + ")"
 }
@@ -160,7 +162,7 @@ func line(f *findings.Finding) string {
 	case f.Kind != findings.KindVulnerability:
 		s += " — " + clean(f.Summary)
 	case f.HasFix():
-		s += fmt.Sprintf("  %s → %s", f.Installed, f.Fixed)
+		s += fmt.Sprintf("  %s → %s", f.Installed, clean(f.Fixed))
 	default:
 		s += "  no fix yet"
 	}
@@ -194,15 +196,20 @@ func (a *app) findingsCmd() *cobra.Command {
 		Short: "List what's open on your servers, most urgent first",
 		Args:  cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
-			paths, _, err := a.setup()
+			paths, cfg, err := a.setup()
 			if err != nil {
 				return err
+			}
+			if server != "" { // a typo must not look like a server with nothing to fix
+				if _, err := pick(cfg, []string{server}, true); err != nil {
+					return err
+				}
 			}
 			st, err := findings.Load(paths)
 			if err != nil {
 				return err
 			}
-			var shown []*findings.Finding
+			shown := []*findings.Finding{}
 			hidden := 0
 			for _, f := range st.Findings {
 				if !f.Open() || (server != "" && f.Server != server) {
@@ -239,6 +246,10 @@ func (a *app) showCmd() *cobra.Command {
 		Short: "Show a vulnerability: what it is, which servers have it, and the fix",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
+			cve, err := parseCVE(args[0])
+			if err != nil {
+				return err
+			}
 			paths, _, err := a.setup()
 			if err != nil {
 				return err
@@ -247,7 +258,6 @@ func (a *app) showCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cve := strings.ToUpper(args[0])
 			matches := slices.DeleteFunc(slices.Clone(st.Findings), func(f *findings.Finding) bool { return f.CVE != cve })
 			if len(matches) == 0 {
 				return apperr.New(apperr.FindingsNotFound, cve+" doesn't affect any of your servers (as of the last check)")
@@ -259,7 +269,7 @@ func (a *app) showCmd() *cobra.Command {
 				if f.Score > 0 {
 					_, _ = fmt.Fprintf(w, "Severity: CVSS %.1f", f.Score)
 				} else {
-					_, _ = fmt.Fprintf(w, "Severity: %s (distro rating)", cmp.Or(f.DistroPriority, "unknown"))
+					_, _ = fmt.Fprintf(w, "Severity: %s (distro rating)", clean(cmp.Or(f.DistroPriority, "unknown")))
 				}
 				if f.EPSS > 0 {
 					_, _ = fmt.Fprintf(w, " · EPSS %.0f%%", f.EPSS*100)
@@ -270,7 +280,7 @@ func (a *app) showCmd() *cobra.Command {
 				_, _ = fmt.Fprintf(w, "\n\nServers:\n")
 				early := false
 				for _, m := range matches {
-					state, fixed := string(m.State), cmp.Or(m.Fixed, "no fix yet")
+					state, fixed := string(m.State), clean(cmp.Or(m.Fixed, "no fix yet"))
 					if !m.Open() {
 						state = cmp.Or(m.Resolution, "fixed") + " " + m.ResolvedAt.Local().Format("2006-01-02")
 					}
@@ -293,65 +303,6 @@ func (a *app) showCmd() *cobra.Command {
 			})
 		},
 	}
-}
-
-func (a *app) ackCmd() *cobra.Command {
-	var server, until, reason string
-	cmd := &cobra.Command{
-		Use:   "ack <CVE-…>",
-		Short: "Acknowledge a vulnerability: snooze it until a date, or accept the risk",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			paths, _, err := a.setup()
-			if err != nil {
-				return err
-			}
-			var snoozeUntil time.Time
-			if until != "" {
-				if snoozeUntil, err = time.ParseInLocation("2006-01-02", until, time.Local); err != nil {
-					return apperr.Wrap(apperr.CLIUsage, err, "--until must be a date like 2026-12-31")
-				}
-			}
-			cve, now, changed := strings.ToUpper(args[0]), time.Now(), 0
-			err = findings.Update(paths, func(st *findings.Store) error {
-				for _, f := range st.Findings {
-					if f.CVE != cve || !f.Open() || (server != "" && f.Server != server) {
-						continue
-					}
-					to := findings.StateAccepted
-					if !snoozeUntil.IsZero() {
-						to = findings.StateSnoozed
-					}
-					if f.State == to {
-						continue
-					}
-					if err := f.Transition(to, now); err != nil {
-						return err
-					}
-					f.SnoozedUntil, f.AckReason = snoozeUntil, reason
-					changed++
-				}
-				return nil
-			})
-			if err != nil {
-				return err
-			}
-			if changed == 0 {
-				return apperr.New(apperr.FindingsNotFound, "no open finding for "+cve+" to acknowledge")
-			}
-			return a.emit(map[string]int{"acknowledged": changed}, func(w io.Writer) {
-				if snoozeUntil.IsZero() {
-					_, _ = fmt.Fprintf(w, "✓ %s accepted on %d server(s). It reopens if it gets more urgent.\n", cve, changed)
-				} else {
-					_, _ = fmt.Fprintf(w, "✓ %s snoozed until %s on %d server(s).\n", cve, until, changed)
-				}
-			})
-		},
-	}
-	cmd.Flags().StringVar(&server, "server", "", "only on this server")
-	cmd.Flags().StringVar(&until, "until", "", "snooze until this date (YYYY-MM-DD); without it the risk is accepted")
-	cmd.Flags().StringVar(&reason, "reason", "", "why, for your future self")
-	return cmd
 }
 
 // describe names what a check covers: "this Mac and web-1", or "4 servers".

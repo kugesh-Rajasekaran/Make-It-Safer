@@ -6,7 +6,6 @@ import (
 	"runtime"
 	"slices"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -41,13 +40,16 @@ or press Ctrl-C to skip. Without a CVE, everything fixable on the server
 is combined into one command.`,
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(_ *cobra.Command, args []string) error {
+			cve := ""
+			if len(args) == 2 {
+				var err error
+				if cve, err = parseCVE(args[1]); err != nil {
+					return err
+				}
+			}
 			paths, cfg, err := a.setup()
 			if err != nil {
 				return err
-			}
-			cve := ""
-			if len(args) == 2 {
-				cve = strings.ToUpper(args[1])
 			}
 			if err := a.openFix(paths, cfg, args[0], cve); err != nil {
 				return err
@@ -72,11 +74,14 @@ func (a *app) pickCmd() *cobra.Command {
 		Short: "Choose servers affected by a vulnerability and open their fixes, one by one",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
+			cve, err := parseCVE(args[0])
+			if err != nil {
+				return err
+			}
 			paths, cfg, err := a.setup()
 			if err != nil {
 				return err
 			}
-			cve := strings.ToUpper(args[0])
 			opened := map[string]bool{}
 			for {
 				st, err := findings.Load(paths)

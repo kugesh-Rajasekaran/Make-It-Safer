@@ -97,14 +97,28 @@ func (a *app) runConfigSet(key, value string) error {
 	if err != nil {
 		return err
 	}
+	wasChecked := cfg.ThisComputer
 	if err := s.Set(cfg, value); err != nil {
 		return err
 	}
 	if err := cfg.Save(paths.Config); err != nil {
 		return err
 	}
+	if err := forgetIfNoLongerChecked(paths, wasChecked, cfg); err != nil {
+		return err
+	}
 	v := settingValue{Key: s.Key, Value: s.Value(cfg)}
 	return a.emit(v, func(w io.Writer) { _, _ = fmt.Fprintf(w, "✓ %s = %s\n", v.Key, v.Value) })
+}
+
+// forgetIfNoLongerChecked drops what is stored about this computer when
+// this_computer was turned off, so its findings don't linger, get reminded
+// and offer fixes that fail.
+func forgetIfNoLongerChecked(paths config.Paths, wasChecked bool, cfg *config.Config) error {
+	if !wasChecked || cfg.ThisComputer {
+		return nil
+	}
+	return forgetServerState(paths, config.LocalName())
 }
 
 func lookupSetting(key string) (config.Setting, error) {
