@@ -92,9 +92,12 @@ When a vulnerability with a fix affects your servers, you get one notification p
 
 ```text
 🟠 CVE-2024-6387 · openssh
+Can be triggered remotely, no login · could gain full control
 2 servers affected · fix available
 [ db-1 ]   [ web-1 ]   [ All servers… ]
 ```
+
+The second line says why it matters, so you can decide whether it can wait (see [Act now or later?](#act-now-or-later)).
 
 1. **Click a server button** (here `web-1`).
 2. **Your terminal opens and connects with `ssh` as you.**
@@ -105,6 +108,7 @@ When a vulnerability with a fix affects your servers, you get one notification p
    ```text
    Make-It-Safer · web-1
      CVE-2024-6387  openssh  installed 1:9.6p1-3ubuntu13 → fixed in 1:9.6p1-3ubuntu13.3
+     Why: can be triggered remotely, no login · could gain full control
    Enter = run · edit it first · Ctrl-C = skip to a normal shell
 
    ubuntu@web-1:~$ sudo apt-get update && sudo apt-get install --only-upgrade openssh-client openssh-server openssh-sftp-server
@@ -118,6 +122,35 @@ Why doesn't it just run the fix? Running it automatically would mean `mis` holds
 The other buttons:
 - **All servers…** (or a click on the notification itself) opens a list in your terminal. Pick a server and its SSH window opens; the list comes back so you can pick the next one, and `q` leaves it.
 - **On a Mac update notification** ("macOS 15.8.2 · fixes 58 vulnerabilities"), the **This Mac** button (or a click on the notification) opens System Settings › Software Update.
+
+## Act now or later?
+
+Every vulnerability gets a verdict and one line saying why, in the notification, `mis findings`, `mis show` and the fix banner:
+
+| Verdict | Means |
+|---|---|
+| **Act now** | Being exploited, or severe and easy to reach |
+| **This week** | Serious; fix it soon |
+| **Can wait** | Low risk; it's in the weekly summary |
+| **No fix yet** | Nothing to install yet; `mis` tells you when a fix arrives |
+
+`mis show CVE-…` gives the full picture:
+
+```text
+CVE-2024-6387 · openssh
+
+  THIS WEEK — can be triggered remotely, no login · could gain full control
+
+  What an attacker could do  Could gain full control
+  How it's triggered         Can be triggered remotely, no login · no user action · hard to pull off
+  Being exploited?           No known attacks · 9% chance of attacks in the next 30 days (EPSS)
+  Your servers               web-1  openssh 1:9.6p1-3ubuntu13 → 1:9.6p1-3ubuntu13.3  [notified]
+  Fix                        mis fix web-1 CVE-2024-6387
+  Details                    A race condition in sshd's signal handling lets an …
+  Weakness                   CWE-364: Signal Handler Race Condition
+```
+
+The words come from fixed rules over the CVE record (its CVSS vector and weakness), CISA's list of exploited vulnerabilities, EPSS, and, on a Mac, Apple's own "Impact" sentence. No AI, and nothing extra is sent. "Triggered remotely" means the attack can arrive over the network; `mis` can't see your firewall, so it never claims more.
 
 ## How the encryption works
 
@@ -188,7 +221,7 @@ All of it is public and comes over HTTPS. None of it needs an API key or account
 ```bash
 mis status          # what's open on each server and this computer
 mis findings        # everything open, most urgent first
-mis show CVE-…      # what it is, which servers have it, the fix
+mis show CVE-…      # act now or later, and why; which servers; the fix
 mis fix web-1       # open the fix for everything fixable on web-1 (add a CVE for just that one)
 mis check           # check now instead of waiting
 mis config          # settings: alert levels, timers, terminal, notifications

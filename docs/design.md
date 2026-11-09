@@ -277,10 +277,20 @@ On a typical server (369 source packages), two days of real CVEs (1,236 records)
 
 ### 4.6 Notifications
 
+**Why it matters, in plain words** (`internal/explain`). Every vulnerability gets a verdict and one line saying why:
+- **Verdict** from the priority (§4.4): urgent → *Act now*, high → *This week*, normal → *Can wait*, no fix → *No fix yet*. The text can't disagree with the priority.
+- **Why line** (≤ 80 characters) from fixed rules: "being exploited" (CISA KEV); then from the CVSS vector, how it's reached (remotely / local network / local access / physical; login or not; user action) and what it allows (full control / read data / change data / crash it). Without a vector: the source's impact sentence (Apple, CISA), else the distro's rating.
+- **Honest wording:** CVSS "network" means the attack data can arrive over the network, not that the server is reachable from the internet, so it says "can be triggered remotely".
+- **Facts kept per finding** at check time: the CVSS vector, the first CWE and the description from the CVE record, Apple's "Impact:" sentence per CVE, CISA's short description. Display only, cleaned of control and formatting characters.
+- **Shown in** the notification (second line; an Apple update shows "Worst: …" in Apple's words), `mis findings` (verdict column, why on the line below), `mis show` (verdict, what an attacker could do, how it's triggered, being exploited, servers, fix, details, weakness) and the fix banner ("Why: …").
+- `mis show` looks the CVE record up when a finding has none (findings without a fix aren't looked up during checks).
+
 **One notification per CVE, one button per affected server, plus "All servers…".**
 ```
 ┌ Make-It-Safer ───────────────────────────────────────┐
 │ 🔴 CVE-2026-XXXXX · openssh · actively exploited      │
+│ Can be triggered remotely, no login · could gain full │
+│ control                                               │
 │ 3 servers affected · fix available                    │
 │ [ovh-web-1]  [ovh-db-1]  [All servers…]               │
 └───────────────────────────────────────────────────────┘
@@ -315,11 +325,12 @@ On a typical server (369 source packages), two days of real CVEs (1,236 records)
 ```
 Make-It-Safer · ovh-web-1
   CVE-2026-XXXXX  openssh  installed 1:9.6p1-3ubuntu13.5 → fixed in 1:9.6p1-3ubuntu13.8  (actively exploited)
+  Why: being exploited · can be triggered remotely, no login · could gain full control
 Enter = run · edit it first · Ctrl-C = skip to a normal shell
 
 ubuntu@ovh-web-1:~$ sudo apt-get update && sudo apt-get install --only-upgrade openssh-server openssh-client▌
 ```
-   One line per finding (at most 8, then "…and N more"). Notes follow, each marked with ⚠: for example that the fix comes from Ubuntu Pro, or that you should restart afterwards.
+   One line per finding (at most 8, then "…and N more"), then why the most severe one matters. Notes follow, each marked with ⚠: for example that the fix comes from Ubuntu Pro, or that you should restart afterwards.
    - **Enter** runs it. apt still asks `[Y/n]`, so you see what changes first.
    - **Ctrl-C** at the prompt, or while the command runs, leaves you in a normal shell. The line is read, and the command run, in subshells with normal Ctrl-C, because bash's `read -e` ignores a trapped Ctrl-C.
    - The snippet travels base64-encoded (`bash -c "$(printf %s … | base64 -d)"`), so no quoting breaks on the way.

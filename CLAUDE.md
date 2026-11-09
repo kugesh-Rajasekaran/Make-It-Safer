@@ -13,9 +13,9 @@ Standards are adapted from the DineSynk repo (working style, engineering princip
 - **Servers supported (v1):** Ubuntu, Debian
 - **Audience (v1):** personal use, installed with `install.sh` (GitHub Releases) or from source
 - **Vulnerability data:** OSV.dev (confirmed), CVE List (early warning), CISA KEV, EPSS, endoflife.date, Apple security notes (this Mac)
-- **Status:** milestones M0–M11 built. What's left is the first release and checking on the user's own Mac, Linux desktop and servers (spikes S2, S3 and the acceptance checklist in the plan).
+- **Status:** milestones M0–M12 built and v0.1.0 released. What's left is checking on the user's own Mac, Linux desktop and servers (spikes S2, S3 and the acceptance checklist in the plan).
 
-**Source of truth:** `docs/design.md` (how it works, decisions) and `docs/implementation-plan.md` (milestones M0–M11, tasks). Domain vocabulary is in `CONTEXT.md`.
+**Source of truth:** `docs/design.md` (how it works, decisions) and `docs/implementation-plan.md` (milestones M0–M12, tasks). Domain vocabulary is in `CONTEXT.md`.
 
 ## How to Work
 
@@ -104,6 +104,7 @@ internal/inventory/      collector output parser + validation
 internal/feeds/{osv,kev,epss,cvelist,eol,apple}/   (apple: security notes, parsed HTML, ADR 0003)
 internal/local/          this computer's inventory: the collector on Linux; sw_vers, softwareupdate, brew on a Mac
 internal/match/          early-warning name matcher
+internal/explain/        plain-language verdict and why for a finding (no I/O)
 internal/doctor/         mis doctor checks (each a function of plain inputs)
 internal/findings/       state machine, priorities, reminders, storage
 internal/engine/         a check: refresh package lists, match them, record findings
