@@ -51,6 +51,30 @@ func enableAuto(t *testing.T) (keyPath, autoPath string, store *memStore) {
 	return keyPath, autoPath, store
 }
 
+// Turning auto-unlock on again replaces the unlock key first. If key.auto
+// can't be written afterwards, auto-unlock must end up off, not half on.
+func TestEnableAutoUnlockWriteFailure(t *testing.T) {
+	keyPath, autoPath, store := enableAuto(t)
+	// A directory where key.auto goes makes the write fail.
+	if err := os.Remove(autoPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(autoPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	key, err := Unlock(keyPath, secret.Bytes(testPassphrase))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer key.Destroy()
+	if err := EnableAutoUnlock(autoPath, key, store); err == nil {
+		t.Fatal("EnableAutoUnlock succeeded although key.auto can't be written")
+	}
+	if AutoUnlockEnabled(autoPath) || store.secret != nil {
+		t.Fatalf("after a failed write: enabled = %v, unlock key stored = %v; want both off", AutoUnlockEnabled(autoPath), store.secret != nil)
+	}
+}
+
 func TestAutoUnlockRoundTrip(t *testing.T) {
 	keyPath, autoPath, store := enableAuto(t)
 	if !AutoUnlockEnabled(autoPath) || len(store.secret) != 32 {

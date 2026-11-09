@@ -54,7 +54,7 @@ func TestLengthCountsCharactersAfterNFC(t *testing.T) {
 
 func TestGeneratePassphrase(t *testing.T) {
 	seen := map[string]bool{}
-	for range 5 {
+	for range 2000 { // enough to hit the hyphenated list words (4 of 7776) every run
 		p, err := GeneratePassphrase()
 		if err != nil {
 			t.Fatal(err)

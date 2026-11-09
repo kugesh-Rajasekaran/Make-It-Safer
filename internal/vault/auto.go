@@ -82,7 +82,10 @@ func EnableAutoUnlock(autoPath string, key *Key, store SecretStore) error {
 		return err
 	}
 	if err := config.WriteFileAtomic(autoPath, append(data, '\n')); err != nil {
+		// The unlock key is gone now, so an older key.auto can't open
+		// either: leave auto-unlock cleanly off.
 		_ = store.Delete()
+		_ = os.Remove(autoPath)
 		return err
 	}
 	return nil

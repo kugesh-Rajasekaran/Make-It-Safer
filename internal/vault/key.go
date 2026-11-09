@@ -70,9 +70,11 @@ func (s keySigner) Sign(_ io.Reader, data []byte) (*ssh.Signature, error) {
 	if s.k.buf == nil || !s.k.buf.IsAlive() {
 		return nil, apperr.New(apperr.VaultLocked, "Make-It-Safer is locked; run: mis unlock")
 	}
-	// crypto/ed25519 caches keys by their heap address and can't sign from
-	// memory outside the Go heap, so sign with a short-lived copy that is
-	// wiped straight after. The long-lived key stays in locked memory.
+	// crypto/ed25519 can't sign from memory outside the Go heap, so sign
+	// with a short-lived copy that is wiped straight after. The long-lived
+	// key stays in locked memory. Go's Ed25519 code also keeps an expanded
+	// copy in its own key cache, in ordinary memory, until that memory is
+	// reused; nothing can wipe it (docs/design.md §4.2).
 	priv := make(ed25519.PrivateKey, ed25519.PrivateKeySize)
 	copy(priv, s.k.buf.Bytes())
 	defer clear(priv)

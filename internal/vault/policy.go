@@ -44,11 +44,18 @@ func CheckPassphrase(p secret.Bytes) error {
 }
 
 // GeneratePassphrase returns six random words from the EFF long wordlist,
-// joined with hyphens (≈ 77 bits).
+// joined with hyphens (≈ 77 bits). The four list words that contain a hyphen
+// themselves ("t-shirt") are skipped, so it always reads as six words.
 func GeneratePassphrase() (secret.Bytes, error) {
-	words, err := diceware.Generate(generatedWords)
-	if err != nil {
-		return nil, apperr.Wrap(apperr.VaultKeyCreateFailed, err, "cannot generate a passphrase")
+	words := make([]string, 0, generatedWords)
+	for len(words) < generatedWords {
+		w, err := diceware.Generate(1)
+		if err != nil {
+			return nil, apperr.Wrap(apperr.VaultKeyCreateFailed, err, "cannot generate a passphrase")
+		}
+		if !strings.Contains(w[0], "-") {
+			words = append(words, w[0])
+		}
 	}
 	return secret.Bytes(strings.Join(words, "-")), nil
 }

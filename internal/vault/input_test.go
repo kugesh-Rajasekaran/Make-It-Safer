@@ -22,6 +22,8 @@ func TestReadLine(t *testing.T) {
 		{"ctrl-d cancels", "abc\x04", "", apperr.CLIInputAborted},
 		{"input ends", "abc", "", apperr.CLIInputAborted},
 		{"too long", strings.Repeat("a", maxInputBytes+5) + "\r", "", apperr.VaultPassphraseTooLong},
+		{"ctrl-u after too much input starts over", strings.Repeat("a", maxInputBytes+5) + "\x15right words\r", "right words", ""},
+		{"backspace after too much input is still too long", strings.Repeat("a", maxInputBytes+1) + "\x7f\r", "", apperr.VaultPassphraseTooLong},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
