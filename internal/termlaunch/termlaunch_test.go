@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -30,6 +31,18 @@ func TestRemoteScriptAndCommand(t *testing.T) {
 	}
 	if !strings.Contains(script, `read -r -e -i "$c"`) || !strings.Contains(script, "(actively exploited)") {
 		t.Fatalf("script lacks the prefill or banner:\n%s", script)
+	}
+
+	if !strings.Contains(strings.Join(banner, "\n"), "  Why: being exploited") {
+		t.Fatalf("the banner says why it matters:\n%s", strings.Join(banner, "\n"))
+	}
+	withVector := Banner("web", []*findings.Finding{{Kind: findings.KindVulnerability, CVE: "CVE-2024-6387", Source: "openssh",
+		Fixed: "2", Vector: "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N"}}, cmd)
+	if !slices.Contains(withVector, "  Why: needs local access, needs a login · could read data") {
+		t.Fatalf("banner = %q", withVector)
+	}
+	if reboot := Banner("web", []*findings.Finding{{Kind: findings.KindReboot}}, &fixcmd.Command{}); slices.ContainsFunc(reboot, func(l string) bool { return strings.Contains(l, "Why:") }) {
+		t.Fatalf("a restart has no why line: %q", reboot)
 	}
 
 	remote := RemoteCommand(script)

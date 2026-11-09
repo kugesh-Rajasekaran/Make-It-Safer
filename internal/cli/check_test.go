@@ -13,11 +13,11 @@ func TestLine(t *testing.T) {
 		want []string
 	}{
 		{findings.Finding{Server: "web", Kind: findings.KindVulnerability, CVE: "CVE-2024-6387", Source: "openssh", Installed: "1", Fixed: "2", Priority: findings.Urgent, KEV: true},
-			[]string{"🔴 urgent web", "CVE-2024-6387 (openssh)  1 → 2", "(actively exploited)"}},
+			[]string{"🔴 Act now    web", "CVE-2024-6387 (openssh)  1 → 2"}},
 		{findings.Finding{Server: "web", Kind: findings.KindEarlyWarning, CVE: "CVE-2026-0001", Source: "openssh", Score: 9.8, Priority: findings.High},
-			[]string{"🟡 early  web", "CVE-2026-0001 (openssh)  unconfirmed: your distro hasn't assessed it yet · CVSS 9.8"}},
+			[]string{"🟡 Heads-up   web", "CVE-2026-0001 (openssh)  unconfirmed: your distro hasn't assessed it yet · CVSS 9.8"}},
 		{findings.Finding{Server: "this-mac", Kind: findings.KindUpdates, Source: "homebrew", Summary: "3 Homebrew packages can be updated: a, b, c", Priority: findings.Normal},
-			[]string{"🟡 normal this-mac", "Homebrew updates — 3 Homebrew packages"}},
+			[]string{"🟡 Can wait   this-mac", "Homebrew updates — 3 Homebrew packages"}},
 		// Text from a data feed never reaches the terminal with control characters.
 		{findings.Finding{Server: "web", Kind: findings.KindVulnerability, CVE: "CVE-2024-6387", Source: "openssh", Installed: "1", Fixed: "2\x1b]0;x\x07", Priority: findings.High},
 			[]string{"1 → 2]0;x"}},
@@ -34,6 +34,20 @@ func TestLine(t *testing.T) {
 	}
 }
 
+// A vulnerability's entry has a second line saying why it matters.
+func TestEntry(t *testing.T) {
+	f := &findings.Finding{Server: "web", Kind: findings.KindVulnerability, CVE: "CVE-2024-6387", Source: "openssh", Installed: "1", Fixed: "2",
+		Priority: findings.Urgent, KEV: true, Vector: "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H"}
+	got := strings.Split(entry(f, "  "), "\n")
+	if len(got) != 2 || !strings.HasPrefix(got[0], "  🔴 Act now") ||
+		got[1] != "       being exploited · can be triggered remotely, no login · could gain full control" {
+		t.Fatalf("entry = %q", got)
+	}
+	if e := entry(&findings.Finding{Server: "web", Kind: findings.KindReboot, Priority: findings.High}, ""); strings.Contains(e, "\n") {
+		t.Errorf("a non-vulnerability gets one line: %q", e)
+	}
+}
+
 func TestShowCleansFeedText(t *testing.T) {
 	paths := newConfigHome(t)
 	withServers(t, paths, false, "web")
@@ -42,7 +56,7 @@ func TestShowCleansFeedText(t *testing.T) {
 	putFindings(t, paths, f)
 
 	code, out, _ := runCLI(t, "show", testCVE)
-	if code != 0 || !strings.Contains(out, "Severity: high") || strings.ContainsAny(out, "\x1b\x07") {
+	if code != 0 || !strings.Contains(out, "rated high") || strings.ContainsAny(out, "\x1b\x07") {
 		t.Fatalf("exit %d, output %q", code, out)
 	}
 }

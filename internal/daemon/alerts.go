@@ -12,6 +12,7 @@ import (
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/apperr"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/config"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/engine"
+	"github.com/kugesh-rajasekaran/make-it-safer/internal/explain"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/findings"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/notify"
 )
@@ -206,6 +207,11 @@ func (d *Daemon) groupNotification(key string, group []*findings.Finding, fixed 
 			n.Title += fmt.Sprintf(" · %d actively exploited", exploited)
 		}
 		n.Body = "Install it in System Settings › Software Update."
+		if w := explain.Worst(group); w != nil {
+			if worst := cmp.Or(explain.Impact(w), explain.Risk(w)); worst != "" {
+				n.Body = "Worst: " + worst + "\n" + n.Body
+			}
+		}
 		n.Buttons = []notify.Button{{ID: "fix:" + group[0].Server, Title: config.LocalLabel()}}
 		return n
 	}
@@ -243,6 +249,9 @@ func (d *Daemon) groupNotification(key string, group []*findings.Finding, fixed 
 		n.Body = affected + " · fix available"
 	default:
 		n.Body = affected + " · no fix yet"
+	}
+	if risk := explain.Risk(explain.Worst(group)); risk != "" { // the title already says when it's exploited
+		n.Body = explain.Capitalize(risk) + "\n" + n.Body
 	}
 
 	d.mu.Lock()

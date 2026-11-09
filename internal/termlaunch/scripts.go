@@ -12,6 +12,7 @@ import (
 	"unicode"
 
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/config"
+	"github.com/kugesh-rajasekaran/make-it-safer/internal/explain"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/findings"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/fixcmd"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/sshx"
@@ -43,6 +44,9 @@ func Banner(server string, fs []*findings.Finding, cmd *fixcmd.Command) []string
 			}
 			lines = append(lines, line)
 		}
+	}
+	if why := explain.Why(explain.Worst(fs)); why != "" {
+		lines = append(lines, "  Why: "+why)
 	}
 	for _, n := range cmd.Notes {
 		lines = append(lines, "  ⚠ "+n)
