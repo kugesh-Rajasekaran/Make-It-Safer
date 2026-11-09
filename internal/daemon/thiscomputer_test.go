@@ -1,11 +1,16 @@
 package daemon
 
 import (
+	"io"
+	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/config"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/findings"
+	"github.com/kugesh-rajasekaran/make-it-safer/internal/inventory"
+	"github.com/kugesh-rajasekaran/make-it-safer/internal/notify"
 )
 
 // This Mac gets one notification per Apple update, with a "This Mac" button,
@@ -43,6 +48,49 @@ func TestAppleUpdateNotification(t *testing.T) {
 	}
 	if !strings.Contains(n.Body, "Software Update") {
 		t.Fatalf("body: %q", n.Body)
+	}
+}
+
+// Clicking an Apple update notification, on its button or on the
+// notification itself, opens Software Update.
+func TestAppleUpdateClick(t *testing.T) {
+	paths := newInstall(t)
+	cfg, _ := config.Load(paths.Config)
+	cfg.ThisComputer = true
+	if err := cfg.Save(paths.Config); err != nil {
+		t.Fatal(err)
+	}
+	me := config.LocalName()
+	if err := inventory.Save(paths, me, &inventory.Inventory{OSID: "macos", OSVersion: "15.7.7", Mac: &inventory.Mac{}}); err != nil {
+		t.Fatal(err)
+	}
+	f := &findings.Finding{ID: findings.MakeID(me, findings.KindVulnerability, "CVE-2026-1002/macos"), Server: me, Kind: findings.KindVulnerability,
+		CVE: "CVE-2026-1002", Source: "macos", Installed: "15.7.7", Fixed: "15.8.2", Priority: findings.Urgent}
+	_ = findings.Update(paths, func(st *findings.Store) error {
+		st.Merge(me, []*findings.Finding{f}, []findings.Kind{findings.KindVulnerability}, time.Now())
+		return nil
+	})
+
+	opened := 0
+	defer func(orig func() error) { openSoftwareUpdate = orig }(openSoftwareUpdate)
+	openSoftwareUpdate = func() error { opened++; return nil }
+
+	rec := newRecorder()
+	d := New(paths, "test", slog.New(slog.NewTextHandler(io.Discard, nil)), rec)
+	d.followUpEvery = time.Hour // don't follow up during the test
+	key := groupKey(f)
+	d.onClick(notify.Event{NotificationID: key, Action: "fix:" + me})
+	d.onClick(notify.Event{NotificationID: key, Action: notify.Default})
+
+	if opened != 2 {
+		t.Fatalf("Software Update opened %d times, want 2", opened)
+	}
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+	for _, n := range rec.shown {
+		if n.ID != key {
+			t.Fatalf("unexpected notification %+v (an error?)", n)
+		}
 	}
 }
 
