@@ -10,9 +10,9 @@
 
 | | |
 |---|---|
-| **Completely local** | No accounts, no cloud sync, no telemetry. Settings, findings and the encrypted key stay on your computer. It only connects to public vulnerability databases ([list](#where-the-data-comes-from)) and to your own servers. |
+| **No accounts, no telemetry** | No cloud sync. Settings, findings and the encrypted key stay on your computer. To find vulnerabilities, `mis` sends package names and versions, never your server names or addresses ([exactly what](#where-the-data-comes-from)). |
 | **Read-only on your servers** | Each server gets a `mis` user that can do exactly one thing: print the list of installed packages. No sudo, no shell, no write access. `mis` never stores or uses your admin login. |
-| **Your own computer counts too** | The computer running `mis` is checked like any server. A Mac's macOS, Safari and Homebrew are checked against Apple's security notes. A Linux desktop gets the same package check as your servers. |
+| **Your own computer counts too** | The computer running `mis` is checked like any server. A Mac's macOS and Safari are checked against Apple's security notes, and outdated Homebrew packages go into the weekly summary (Homebrew has no vulnerability data). A Linux desktop gets the same package check as your servers. |
 | **One click from alert to fix** | A notification button opens your terminal, connects with your own SSH login, and types the exact update command. You press Enter. [How it works](#from-notification-to-fix) |
 | **Encrypted, passphrase never stored** | The only secret is an SSH key, saved encrypted with Argon2id and XChaCha20-Poly1305. [How the encryption works](#how-the-encryption-works) |
 | **Only what matters interrupts you** | Debian and Ubuntu severity, CISA's list of actively exploited vulnerabilities and exploit likelihood (EPSS) decide the priority. Urgent and high findings notify you; the rest waits for a weekly summary. |
@@ -111,14 +111,13 @@ When a vulnerability with a fix affects your servers, you get one notification p
    ```
 
 4. **Press Enter to run it.** You can also edit it first, or press Ctrl-C for a normal shell. **Nothing runs until you press Enter.**
-5. **`mis` checks again** every 10 minutes for the next hour. Once the update is in, the finding closes and the button shows ✓.
+5. **`mis` checks again** every 10 minutes for the next hour. Once the update is in, the finding closes and the notification becomes ✅. The button shows ✓ as soon as you use it, so you can see which servers you've already opened.
 
 Why doesn't it just run the fix? Running it automatically would mean `mis` holds admin access to every server. Instead `mis` only ever has read-only access, and anything that changes a server happens in your own session, where you can see it.
 
 The other buttons:
-- **All servers…** opens each affected server, one after another.
-- **The notification itself** shows the details and the affected servers.
-- **On a Mac update notification** ("macOS 15.8.2 · fixes 58 vulnerabilities"), the **This Mac** button opens System Settings › Software Update.
+- **All servers…** (or a click on the notification itself) opens a list in your terminal. Pick a server and its SSH window opens; the list comes back so you can pick the next one, and `q` leaves it.
+- **On a Mac update notification** ("macOS 15.8.2 · fixes 58 vulnerabilities"), the **This Mac** button (or a click on the notification) opens System Settings › Software Update.
 
 ## How the encryption works
 
@@ -128,7 +127,7 @@ The other buttons:
  passphrase ──Argon2id──▶ 256-bit key ──XChaCha20-Poly1305──▶ key.enc        (on disk)
                                                                 │  mis unlock
                                                                 ▼
-                                   SSH key in locked memory, background service only
+                                   SSH key in locked memory, only while in use
                                                                 │  ssh as user "mis"
                                                                 ▼
                                    server: prints its package list, nothing else
@@ -137,16 +136,16 @@ The other buttons:
 1. **Setup.** `mis init` creates a new Ed25519 key on your computer. The public half goes onto your servers. The private half is encrypted before it's written anywhere.
 2. **On disk (`key.enc`).**
    - Your passphrase is stretched with **Argon2id** into a 256-bit key, using a random 16-byte salt.
-   - Argon2id uses the RFC 9106 settings: 2 GiB of memory, 1 pass, 4 lanes. Computers with less than 8 GB of RAM use 64 MiB and 3 passes.
+   - Argon2id uses the RFC 9106 settings: 2 GiB of memory, 1 pass, 4 lanes. Computers with less than 8 GiB of usable memory use 64 MiB and 3 passes.
    - That key encrypts the SSH key with **XChaCha20-Poly1305** and a random 24-byte nonce.
    - The file header (format, Argon2id settings, salt) is authenticated too, so any change to the file is detected.
    - **The passphrase itself is never stored anywhere.**
 3. **Unlocking.** The background service starts locked.
    - `mis unlock` reads your passphrase from the terminal only, never from flags or environment variables.
-   - It decrypts the key into locked memory (`memguard`: never swapped to disk), then wipes the passphrase.
+   - It decrypts the key into locked memory (`memguard`: kept out of swap), then wipes the passphrase.
    - Wrong guesses are slowed down.
 4. **While running.**
-   - The key exists only in the background service's locked memory.
+   - The key is kept in locked memory: in the background service while it's unlocked, and inside a short-lived `mis` command that unlocks it itself (`mis init`, `mis server add` and `verify`, `mis check` when the service is locked or not running, `mis auto-unlock on`, `mis passphrase change`), until that command ends. Short-lived copies (the typed passphrase, the copy used to sign) are wiped after use, but they live in ordinary memory, and Go's crypto code can keep its own copy until that memory is reused.
    - Core dumps and debuggers are blocked.
    - `mis lock`, logging out, restarting or a crash wipe it.
 5. **Auto-unlock (optional, macOS).**
@@ -159,7 +158,7 @@ The other buttons:
 
 | | What they can do |
 |---|---|
-| Your computer while it's off | Only `key.enc` is on disk. Each passphrase guess costs about a second and 2 GiB of memory. With the generated six-word passphrase (about 77 bits), guessing is hopeless. |
+| Your computer while it's off | Only `key.enc` is on disk, plus `key.auto` if auto-unlock is on (it's useless without your login Keychain, which your Mac login password protects). On a typical computer each passphrase guess costs about a second and 2 GiB of memory (a low-memory computer uses 64 MiB, see above). With the generated six-word passphrase (about 77 bits), guessing is hopeless. |
 | `key.enc` and your passphrase, or your unlocked computer | Log in as `mis` and read package lists. Nothing else: your admin credentials were never there. |
 | Your network (man in the middle) | Nothing: each server's host key is pinned. A changed key blocks the connection and sends you an urgent alert. |
 
@@ -169,14 +168,18 @@ The full threat model is in [design §5](docs/design.md#5-security).
 
 All of it is public and comes over HTTPS. None of it needs an API key or account.
 
-| Source | Used for |
-|---|---|
-| [OSV.dev](https://osv.dev) | Debian and Ubuntu advisories: which package versions are affected, and the fixed version |
-| [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) | Vulnerabilities being exploited right now, which makes them urgent |
-| [EPSS](https://www.first.org/epss/) | How likely a vulnerability is to be exploited soon |
-| [CVE List](https://github.com/CVEProject/cvelistV5) | Early warnings for brand-new CVEs, before your distribution confirms them |
-| [endoflife.date](https://endoflife.date) | Operating system releases that no longer get security fixes |
-| [Apple security releases](https://support.apple.com/en-us/100100) | macOS and Safari fixes, for a Mac running `mis` |
+| Source | Used for | What `mis` sends it |
+|---|---|---|
+| [OSV.dev](https://osv.dev) | Debian and Ubuntu advisories: which package versions are affected, and the fixed version | The **names and versions of installed packages** (source package name, version and OS release such as `Debian:12`) of your servers and, on Linux, of the desktop `mis` runs on. Then the IDs of the advisories that matched |
+| [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) | Vulnerabilities being exploited right now, which makes them urgent | Nothing: it downloads the whole list |
+| [EPSS](https://www.first.org/epss/) | How likely a vulnerability is to be exploited soon | The CVE IDs of your findings |
+| [CVE List](https://github.com/CVEProject/cvelistV5) | Scores, and early warnings for brand-new CVEs, before your distribution confirms them | The CVE IDs of your findings (the records are downloaded from `raw.githubusercontent.com`) |
+| [endoflife.date](https://endoflife.date) | Operating system releases that no longer get security fixes | Nothing: it downloads one list per operating system you use |
+| [Apple security releases](https://support.apple.com/en-us/100100) | macOS and Safari fixes, for a Mac running `mis` | Nothing: it downloads Apple's public pages |
+
+- **Never sent:** server names, host names, IP addresses, SSH logins, or anything from a Mac's inventory (a Mac is matched against Apple's notes on your computer).
+- **Every request** carries the user agent `make-it-safer/<version>`. As with any web request, each service also sees your computer's IP address.
+- **On a Mac,** `softwareupdate` contacts Apple by itself to see which updates are offered.
 
 `mis` refuses to connect anywhere else ([design §4.9](docs/design.md)).
 
@@ -186,7 +189,7 @@ All of it is public and comes over HTTPS. None of it needs an API key or account
 mis status          # what's open on each server and this computer
 mis findings        # everything open, most urgent first
 mis show CVE-…      # what it is, which servers have it, the fix
-mis fix web-1       # same as clicking the web-1 button
+mis fix web-1       # open the fix for everything fixable on web-1 (add a CVE for just that one)
 mis check           # check now instead of waiting
 mis config          # settings: alert levels, timers, terminal, notifications
 mis doctor          # is everything working? says how to fix what isn't
@@ -215,7 +218,7 @@ make test-integration   # Docker: throwaway Ubuntu/Debian SSH servers
 git config core.hooksPath .githooks   # run `make check` before each commit
 ```
 
-**Releasing:** push a tag such as `v0.1.0`. The [release workflow](.github/workflows/release.yml) builds the macOS and Linux archives and publishes them, with `checksums.txt`, as a GitHub Release.
+**Releasing:** push a tag such as `v0.1.0`. The [release workflow](.github/workflows/release.yml) runs the checks (`make check`, `govulncheck`), builds the macOS and Linux archives and publishes them, with `checksums.txt`, as a GitHub Release.
 
 ## Security
 

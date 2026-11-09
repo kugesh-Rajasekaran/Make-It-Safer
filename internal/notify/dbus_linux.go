@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/godbus/dbus/v5"
 
@@ -16,6 +17,12 @@ const (
 	busPath   = dbus.ObjectPath("/org/freedesktop/Notifications")
 	busPrefix = busName + "."
 )
+
+// callTimeout bounds a call to the notification server: the daemon shows
+// notifications while holding its findings lock, so a server that never
+// answers must not hold it for the bus's own (minutes-long) timeout.
+// It is a variable so tests can shorten it.
+var callTimeout = 10 * time.Second
 
 // DBus shows freedesktop notifications (GNOME, KDE, …). Notifications are
 // "resident" so clicking a button doesn't close them, and showing one again
@@ -128,13 +135,15 @@ func (d *DBus) Show(n Notification) error {
 	replaces := d.ids[n.ID]
 	d.mu.Unlock()
 
+	ctx, cancel := context.WithTimeout(context.Background(), callTimeout)
+	defer cancel()
 	var id uint32
-	err := d.obj.Call(busPrefix+"Notify", 0, "Make-It-Safer", replaces, "dialog-warning", n.Title, n.Body, actions, hints, int32(0)).Store(&id)
+	err := d.obj.CallWithContext(ctx, busPrefix+"Notify", 0, "Make-It-Safer", replaces, "dialog-warning", n.Title, n.Body, actions, hints, int32(0)).Store(&id)
 	if err != nil {
 		return apperr.Wrap(apperr.NotifyUnavailable, err, "cannot show a notification")
 	}
 	var owner string // it changes when the notification server restarts
-	if err := d.conn.BusObject().Call("org.freedesktop.DBus.GetNameOwner", 0, busName).Store(&owner); err != nil {
+	if err := d.conn.BusObject().CallWithContext(ctx, "org.freedesktop.DBus.GetNameOwner", 0, busName).Store(&owner); err != nil {
 		return apperr.Wrap(apperr.NotifyUnavailable, err, "cannot find the notification server")
 	}
 	d.mu.Lock()
@@ -155,7 +164,9 @@ func (d *DBus) Remove(id string) error {
 	if !ok {
 		return nil
 	}
-	return d.obj.Call(busPrefix+"CloseNotification", 0, sid).Err
+	ctx, cancel := context.WithTimeout(context.Background(), callTimeout)
+	defer cancel()
+	return d.obj.CallWithContext(ctx, busPrefix+"CloseNotification", 0, sid).Err
 }
 
 // Events reports clicks.

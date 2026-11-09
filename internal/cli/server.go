@@ -64,7 +64,20 @@ func (a *app) runServerAdd(name string, o addOptions) error {
 	if err != nil {
 		return err
 	}
-	return a.printReports(reports)
+	if err := a.printReports(reports); err != nil {
+		return err
+	}
+	a.hintFirstCheck(reports[0].Server)
+	return nil
+}
+
+// hintFirstCheck says how to check a new server now. The scheduler only
+// picks it up at its next run, which can be hours away. Human output only.
+func (a *app) hintFirstCheck(name string) {
+	if a.json {
+		return
+	}
+	a.say("\nThe first check runs on the background service's schedule. To check %s now: mis check %s\n", name, name)
 }
 
 // addServer sets up one server and verifies it. The server is saved once
@@ -101,6 +114,17 @@ func (a *app) addServer(name string, o addOptions) ([]*setup.Report, error) {
 	}
 	if err := s.Validate(); err != nil {
 		return nil, apperr.Wrap(apperr.ConfigInvalid, err, "invalid server")
+	}
+
+	// Unlock the key first, so that a mistyped passphrase or a missing
+	// terminal fails before anything on the server or in config.yaml changes.
+	if a.unlocked == nil {
+		unlocked, err := a.unlockKey(paths)
+		if err != nil {
+			return nil, err
+		}
+		a.unlocked = unlocked
+		defer func() { unlocked.Destroy(); a.unlocked = nil }()
 	}
 
 	// 1. Pin the host key, after you've confirmed it.
@@ -250,7 +274,10 @@ func writeReports(w io.Writer, reports []*setup.Report) {
 }
 
 type serverRow struct {
-	config.Server
+	Name        string     `json:"name"`
+	Host        string     `json:"host"`
+	Port        int        `json:"port"`
+	AdminSSH    string     `json:"admin_ssh"`
 	OS          string     `json:"os,omitempty"`
 	Packages    int        `json:"packages,omitempty"`
 	CollectedAt *time.Time `json:"collected_at,omitempty"`
@@ -268,7 +295,7 @@ func (a *app) serverListCmd() *cobra.Command {
 			}
 			rows := []serverRow{}
 			for _, s := range cfg.Servers {
-				row := serverRow{Server: s}
+				row := serverRow{Name: s.Name, Host: s.Host, Port: s.Port, AdminSSH: s.AdminSSH}
 				if inv, err := inventory.Load(paths, s.Name); err == nil {
 					row.OS, row.Packages, row.CollectedAt = inv.OSID+" "+inv.OSVersion, len(inv.Packages), &inv.CollectedAt
 				}
@@ -289,54 +316,6 @@ func (a *app) serverListCmd() *cobra.Command {
 			})
 		},
 	}
-}
-
-func (a *app) serverRemoveCmd() *cobra.Command {
-	var forget, yes bool
-	cmd := &cobra.Command{
-		Use:   "remove <name>",
-		Short: "Remove a server: delete its mis user, then forget it",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			paths, cfg, err := a.setup()
-			if err != nil {
-				return err
-			}
-			s, ok := cfg.Server(args[0])
-			if !ok {
-				return apperr.New(apperr.ServerNotFound, "no server named "+args[0]+"; see: mis server list")
-			}
-			if !forget {
-				a.say("This removes the mis user, the collector and the sshd settings from %s, through `ssh %s`.\n", s.Name, s.AdminSSH)
-				if !yes {
-					if ok, err := a.confirm("Continue?", true); err != nil {
-						return err
-					} else if !ok {
-						return apperr.New(apperr.CLIInputAborted, "cancelled; nothing was changed")
-					}
-				}
-				if err := setup.RunAsAdmin(context.Background(), s, setup.TeardownScript(), a.stdin, a.stderr, a.stderr); err != nil {
-					return apperr.Wrap(apperr.SetupFailed, err, "removal failed; to only forget the server here, run: mis server remove "+s.Name+" --forget")
-				}
-			}
-			cfg.Servers = slices.DeleteFunc(cfg.Servers, func(x config.Server) bool { return x.Name == s.Name })
-			if err := cfg.Save(paths.Config); err != nil {
-				return err
-			}
-			if err := (sshx.HostKeys{Path: paths.KnownHosts}).Unpin(sshx.TargetOf(s)); err != nil {
-				return err
-			}
-			if err := inventory.Remove(paths, s.Name); err != nil {
-				return err
-			}
-			return a.emit(map[string]string{"removed": s.Name}, func(w io.Writer) {
-				_, _ = fmt.Fprintf(w, "✓ %s removed.\n", s.Name)
-			})
-		},
-	}
-	cmd.Flags().BoolVar(&forget, "forget", false, "only forget the server here; don't connect to it")
-	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask for confirmation")
-	return cmd
 }
 
 func (a *app) serverScriptCmd() *cobra.Command {

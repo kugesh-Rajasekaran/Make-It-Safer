@@ -75,6 +75,13 @@ func TestSources(t *testing.T) {
 		{"kernel.org", []P{{Vendor: "Linux", Product: "Linux"}}, []string{"linux-hwe-6.8"}, []string{Kernel}},
 		{"Android kernel is not Linux's alias", []P{{Vendor: "Google", Product: "Android", Package: "kernel"}}, []string{"linux"}, nil},
 		{"hostile text", []P{{Vendor: "x", Product: "openssh; rm -rf /"}}, server, nil},
+		{"desktop app is not the server package", []P{{Vendor: "Docker", Product: "Docker Desktop"}}, []string{"docker.io", "containerd"}, nil},
+		{"Redis tool is not Redis", []P{{Vendor: "Redis", Product: "RedisInsight"}}, []string{"redis"}, nil},
+		{"pip is not Python", []P{{Vendor: "Python", Product: "pip"}}, []string{"python3.12"}, nil},
+		{"pgAdmin is not PostgreSQL", []P{{Vendor: "PostgreSQL", Product: "pgAdmin"}}, []string{"postgresql-16"}, nil},
+		{"vendor alone, no product", []P{{Vendor: "Docker"}}, []string{"docker.io"}, nil},
+		{"Docker itself", []P{{Vendor: "Docker", Product: "Docker"}}, []string{"docker.io", "containerd"}, []string{"docker.io"}},
+		{"Redis itself, with a desktop tool beside it", []P{{Vendor: "Redis", Product: "Redis"}, {Vendor: "Redis", Product: "RedisInsight"}}, []string{"redis", "redis-tools"}, []string{"redis"}},
 		{"two products", []P{{Vendor: "curl", Product: "curl"}, {Vendor: "OpenSSL", Product: "OpenSSL"}}, server, []string{"curl", "openssl"}},
 	} {
 		if got := Sources(tc.products, tc.installed); !slices.Equal(got, tc.want) {

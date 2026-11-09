@@ -54,7 +54,10 @@ main() {
 	asset="mis_${os}_${arch}.tar.gz"
 
 	tmp="$(mktemp -d)"
-	trap 'rm -rf "$tmp"' EXIT INT TERM
+	# Ctrl-C and kill must end the installer, not just clean up and carry on.
+	trap 'rm -rf "$tmp"' EXIT
+	trap 'exit 130' INT
+	trap 'exit 143' TERM
 
 	say "Downloading $asset ($version)…"
 	curl -fsSL --proto '=https' --tlsv1.2 -o "$tmp/$asset" "$base/$asset" || fail "cannot download $base/$asset"
@@ -81,7 +84,12 @@ main() {
 	fi
 
 	if "$prefix/bin/mis" service status --json 2>/dev/null | grep -q '"installed":true'; then
-		"$prefix/bin/mis" service install >/dev/null && say "✓ Restarted the background service with the new version"
+		if "$prefix/bin/mis" service install >/dev/null; then
+			say "✓ Restarted the background service with the new version"
+		else
+			printf 'mis is installed, but the background service could not be restarted with it.\nTry again with: %s/bin/mis service install\n' "$prefix" >&2
+			exit 1
+		fi
 	fi
 
 	say ""

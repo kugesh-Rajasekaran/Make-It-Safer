@@ -3,9 +3,9 @@
 ## TL;DR
 
 > **What we build:** `mis`, a Go command-line tool and background service for your Mac (then Linux). It finds which of your Ubuntu/Debian servers are affected by new vulnerabilities, notifies you, and opens SSH with the fix command already typed in.
-> **Milestones:** 8 (M0–M7), done in order. **First usable version:** after M5.
+> **Milestones:** 12 (M0–M11), done in order. **First usable version:** after M5.
 > **Effort:** Large overall; each milestone is S, M or L.
-> **Critical path:** M0 → M1 → M2 → M3 → M4 → M5 → M6 → M7
+> **Critical path:** M0 → M1 → M2 → M3 → M4 → M5 → M6 → M7; M8–M11 build on M7
 
 How it works: [`design.md`](design.md) · Rules for working in this repo: [`CLAUDE.md`](../CLAUDE.md) · Terms: [`CONTEXT.md`](../CONTEXT.md)
 

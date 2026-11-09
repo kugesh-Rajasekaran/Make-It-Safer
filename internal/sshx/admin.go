@@ -21,8 +21,3 @@ func AdminArgs(s config.Server, remoteCommand string) []string {
 	}
 	return append(args, "--", s.AdminSSH, remoteCommand)
 }
-
-// AdminIsRoot reports whether the admin login is root (so sudo isn't needed).
-func AdminIsRoot(s config.Server) bool {
-	return strings.HasPrefix(s.AdminSSH, "root@") || s.AdminSSH == "root"
-}

@@ -96,6 +96,9 @@ func TestSetRejectsAndLeavesConfigUnchanged(t *testing.T) {
 		{"rules.remind.high", "2x", "at least 1m"},
 		{"rules.remind.high", "30s", "at least 1m"},
 		{"rules.ignore.packages", "Bad_Name", "not a package name"},
+		{"rules.ignore.packages", "tzdata,none", "empties the list"},
+		{"rules.ignore.cves", "CVE-2024-6387, NONE", "empties the list"},
+		{"schedule.servers", "187649984473771d", "at least 1h"},
 		{"rules.ignore.cves", "CVE-1", "not a CVE ID"},
 		{"terminal.app", "notepad", "pick one of"},
 		{"terminal.app", "custom", "{script}"}, // needs terminal.command first
@@ -139,5 +142,34 @@ func TestCustomTerminalNeedsItsCommand(t *testing.T) {
 func TestLookupUnknown(t *testing.T) {
 	if _, ok := Lookup("rules.nope"); ok {
 		t.Fatal("found a setting that doesn't exist")
+	}
+}
+
+func TestIgnoreListsCanBeEmptied(t *testing.T) {
+	for _, tc := range []struct {
+		key, list string
+		items     func(*Config) []string
+	}{
+		{"rules.ignore.packages", "tzdata,linux-firmware", func(c *Config) []string { return c.Rules.Ignore.Packages }},
+		{"rules.ignore.cves", "CVE-2024-6387", func(c *Config) []string { return c.Rules.Ignore.CVEs }},
+	} {
+		for _, in := range []string{"none", "None", " NONE ", ""} {
+			t.Run(tc.key+"="+in, func(t *testing.T) {
+				s, _ := Lookup(tc.key)
+				c := Default()
+				if err := s.Set(&c, tc.list); err != nil {
+					t.Fatal(err)
+				}
+				if err := s.Set(&c, in); err != nil {
+					t.Fatal(err)
+				}
+				if got := tc.items(&c); got == nil || len(got) != 0 {
+					t.Errorf("items = %#v, want an empty list (not a list holding \"none\")", got)
+				}
+				if err := c.Validate(); err != nil {
+					t.Errorf("result doesn't validate: %v", err)
+				}
+			})
+		}
 	}
 }

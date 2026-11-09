@@ -50,11 +50,7 @@ func New(version string) *Client {
 	for _, h := range AllowedHosts {
 		hosts[h] = true
 	}
-	return &Client{
-		hc:        &http.Client{Timeout: timeout},
-		hosts:     hosts,
-		userAgent: "make-it-safer/" + version,
-	}
+	return newClient(&http.Client{Timeout: timeout}, hosts, false, "make-it-safer/"+version)
 }
 
 // NewForTest returns a client that may only reach the given test server.
@@ -63,7 +59,35 @@ func NewForTest(serverURL string) *Client {
 	if err != nil {
 		panic(err) // test setup error
 	}
-	return &Client{hc: &http.Client{Timeout: 10 * time.Second}, hosts: map[string]bool{u.Host: true}, allowHTTP: true, userAgent: "make-it-safer/test"}
+	return newClient(&http.Client{Timeout: 10 * time.Second}, map[string]bool{u.Host: true}, true, "make-it-safer/test")
+}
+
+func newClient(hc *http.Client, hosts map[string]bool, allowHTTP bool, userAgent string) *Client {
+	c := &Client{hc: hc, hosts: hosts, allowHTTP: allowHTTP, userAgent: userAgent}
+	hc.CheckRedirect = c.checkRedirect
+	return c
+}
+
+// checkRedirect holds a redirect to the same rule as the first request: the
+// new URL must be HTTPS and its host on the allowlist. That lets allowlisted
+// hosts hand a download to each other (OSV data lives on a storage host) and
+// move files within themselves, but nothing leads off the list or down to
+// plain HTTP. A refused redirect ends the request with the 3xx answer, which
+// is reported as a failure. This also covers what a request carries: a 307
+// would send an OSV query's package list on to the new host.
+func (c *Client) checkRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
+	if !c.allowed(req.URL) {
+		return http.ErrUseLastResponse
+	}
+	return nil
+}
+
+// allowed says whether u is on the allowlist and uses an acceptable scheme.
+func (c *Client) allowed(u *url.URL) bool {
+	return c.hosts[u.Host] && (u.Scheme == "https" || c.allowHTTP)
 }
 
 // Response is a successful answer.
@@ -128,7 +152,7 @@ var ErrNotFound = errors.New("not found")
 
 func (c *Client) do(ctx context.Context, r request) (*Response, error) {
 	u, err := url.Parse(r.url)
-	if err != nil || !c.hosts[u.Host] || (u.Scheme != "https" && !c.allowHTTP) {
+	if err != nil || !c.allowed(u) {
 		return nil, apperr.New(apperr.FeedsHostNotAllowed, "refusing to contact "+r.url+": not on the allowlist (docs/design.md §4.9)")
 	}
 	r.url = u.String()

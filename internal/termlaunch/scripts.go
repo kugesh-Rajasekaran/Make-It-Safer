@@ -35,7 +35,7 @@ func Banner(server string, fs []*findings.Finding, cmd *fixcmd.Command) []string
 		default:
 			fixed := "no fix yet"
 			if f.HasFix() {
-				fixed = "fixed in " + f.Fixed
+				fixed = "fixed in " + printable(f.Fixed)
 			}
 			line := fmt.Sprintf("  %s  %s  installed %s → %s", f.CVE, f.Source, f.Installed, fixed)
 			if f.KEV {
@@ -106,10 +106,13 @@ func LocalLauncher(mis string, args ...string) string {
 
 func quote(s string) string { return fixcmd.Quote(s) }
 
-// printable drops control characters (escape codes) from banner text.
+// printable drops what could change how banner text looks in a terminal:
+// control characters (escape codes) and invisible formatting characters
+// (right-to-left overrides and isolates, zero-width characters) and line and
+// paragraph separators.
 func printable(s string) string {
 	return strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) {
+		if unicode.IsControl(r) || unicode.In(r, unicode.Cf, unicode.Zl, unicode.Zp) {
 			return -1
 		}
 		return r

@@ -77,7 +77,7 @@ var transitions = map[State][]State{
 	StateNew:      {StateNotified, StateSnoozed, StateAccepted, StateResolved},
 	StateNotified: {StateSnoozed, StateAccepted, StateResolved},
 	StateSnoozed:  {StateNew, StateAccepted, StateResolved},
-	StateAccepted: {StateNew, StateResolved},
+	StateAccepted: {StateNew, StateSnoozed, StateResolved},
 	StateResolved: {StateNew},
 }
 

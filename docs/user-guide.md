@@ -65,6 +65,8 @@ Run `mis init` and follow the steps. Every step after the passphrase can be skip
 
 When it's done, `mis doctor` should be all green (✓).
 
+**What leaves your computer:** to find vulnerabilities, `mis` sends the names and versions of the packages installed on your servers (and on a Linux desktop it runs on) to OSV.dev, and the CVE IDs of your findings to EPSS and the CVE List. It never sends server names, host names or addresses. The full list is in the [README](../README.md#where-the-data-comes-from).
+
 ---
 
 ## Daily use
@@ -73,12 +75,12 @@ You mostly do nothing: the background service checks by itself and notifies you.
 
 | Notification | Means | Click |
 |---|---|---|
-| 🔴 / 🟠 **CVE-… · openssh** · "2 servers affected · fix available" | A confirmed vulnerability with a fix. 🔴 is urgent (actively exploited, or CVSS ≥ 9), reminded every 4 h; 🟠 daily. | A server button opens its fix. "All servers…" lists them. |
+| 🔴 / 🟠 **CVE-… · openssh** · "2 servers affected · fix available" | A confirmed vulnerability with a fix. 🔴 is urgent (actively exploited, or CVSS ≥ 9), reminded every 4 h; 🟠 daily. | A server button opens its fix. "All servers…", or the notification itself, opens a list to pick from. |
 | 🟡 **Heads-up · CVE-… · openssl** | An early warning: a critical new CVE that names software you have, before your distro has confirmed it. No fix yet. | Opens `mis show CVE-…` |
-| ✅ **CVE-… · Fixed on all servers** | Every affected server is fixed. A heads-up can also end as ✅ "not affected". | — |
-| **Weekly summary** | Normal-priority updates waiting. | Opens `mis findings` |
+| ✅ **CVE-… · Fixed on all servers** | Every affected server is fixed. Other notifications end the same way: ✅ "macOS … installed", ✅ "web restarted". A heads-up can also end as ✅ "not affected". | — |
+| **Weekly summary** | Normal-priority updates waiting (not counting ones you snoozed or accepted). | Opens `mis findings` |
 | **Make-It-Safer is locked** | After a restart. See [unlock](#after-a-restart-unlock). | Opens `mis unlock` |
-| **Vulnerability data is getting old** | No successful check for a day (offline?). | Opens `mis findings` |
+| **Vulnerability data is getting old** / **Package lists are getting old** | No successful check for a day (offline?), or a server's package list wasn't refreshed for a day (locked service, unreachable server); the notification names the server. | Opens `mis findings` |
 
 **Commands you'll use:**
 
@@ -88,7 +90,7 @@ You mostly do nothing: the background service checks by itself and notifies you.
 | `mis findings` | Everything open, most urgent first (`--all` includes items without a fix and accepted ones) |
 | `mis show CVE-…` | One vulnerability: what it is, which servers, the fix |
 | `mis check` | Check now, instead of waiting |
-| `mis ack CVE-… --until 2026-12-01` | Snooze it until a date (`--reason` to remember why) |
+| `mis ack CVE-… --until 2026-12-01` | Snooze it until a date after today (`--reason` to remember why). Run it again with another date to move the snooze, or on an accepted risk to snooze it instead |
 | `mis ack CVE-…` | Accept the risk: no more reminders. It comes back if it gets more urgent. |
 | `mis doctor` | Checks everything and says how to fix what's wrong |
 
@@ -98,7 +100,7 @@ Every command accepts `--json` for scripts and AI agents.
 
 ## Fixing
 
-1. **Click the server's button** in the notification (or run `mis fix <server> [CVE-…]`, or `mis pick CVE-…` to choose from a list).
+1. **Click the server's button** in the notification (or run `mis fix <server> CVE-…`, or `mis pick CVE-…` to choose from a list). Without a CVE, `mis fix <server>` combines everything fixable on that server into one command.
 2. Your terminal opens and logs in with **your own** `ssh` login. Your keys and password prompts apply as usual.
 3. A banner shows what's being fixed, and the command is **typed in for you**:
    ```
@@ -109,7 +111,7 @@ Every command accepts `--json` for scripts and AI agents.
    ubuntu@ovh-web-1:~$ sudo apt-get update && sudo apt-get install --only-upgrade openssh-client openssh-server
    ```
 4. **Enter** runs it. apt still asks `[Y/n]`, so you see what changes. **Ctrl-C** gives you a normal shell instead.
-5. Over the next hour, Make-It-Safer re-checks that server every 10 minutes, and the notification turns into ✅.
+5. Over the next hour, Make-It-Safer re-checks that server every 10 minutes, and the notification turns into ✅. Its button shows ✓ as soon as you click it.
 
 **Special cases:**
 - **Kernel:** the kernel packages are upgraded; restart afterwards with `sudo reboot`. A "needs a restart" notification types `sudo reboot` in for you.
@@ -122,7 +124,7 @@ Every command accepts `--json` for scripts and AI agents.
 
 After you restart your computer, the service starts **locked**: it keeps matching the saved package lists, but can't log in to your servers.
 
-- Click the "Make-It-Safer is locked" notification, or run `mis unlock`, and type your passphrase.
+- Click the "Make-It-Safer is locked" notification, or run `mis unlock`, and type your passphrase. While it stays locked, the notification comes back once a day.
 - `mis lock` wipes the key from memory again, whenever you like. It stays locked until `mis unlock` (or, with auto-unlock, your next login).
 - `mis passphrase change` changes your passphrase.
 
@@ -150,7 +152,7 @@ After you restart your computer, the service starts **locked**: it keeps matchin
 | Button | **This Mac** opens System Settings › Software Update | **This computer** opens a terminal with the fix typed in |
 
 - It appears as `this-mac` (Linux: `this-computer`) in `mis status`, `mis findings` and `mis show`. `mis check this-mac` checks just it; `mis fix this-mac` does what the button does.
-- Turn it on or off in `mis config` ("Also check this Mac") or with `mis config set this_computer yes|no`.
+- Turn it on or off in `mis config` ("Also check this Mac") or with `mis config set this_computer yes|no`. Turning it off also forgets its findings.
 
 ---
 
@@ -161,13 +163,15 @@ After you restart your computer, the service starts **locked**: it keeps matchin
 | `mis server add` | Sets up a server (questions, or flags: `--host`, `--admin`, `--port`, `--fingerprint`) |
 | `mis server list` | Your servers and when their package list was read |
 | `mis server verify [name]` | Proves, from the outside, that the server only lets Make-It-Safer read |
-| `mis server remove <name>` | Removes the read-only user from the server, then forgets it |
+| `mis server remove <name>` | Removes the read-only user from the server, then forgets it and its findings (`--forget`: only forget it). For this computer (`this-mac`, or `this-computer` on Linux) it just stops checking it |
 | `mis server setup-script` | Prints the setup script, to read it or run it yourself |
 
 **What `mis server add` does:**
 1. Shows the server's host key fingerprint. Compare it with your provider's console (or `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` on the server). It's pinned from then on.
 2. Runs a setup script **through your own `ssh` login** (Make-It-Safer never sees it). The script creates a `mis` user that can only run a read-only collector: no password, no sudo, no shell, no forwarding.
 3. Logs in as `mis` and proves the restrictions: other commands, a terminal, forwarding and passwords are all refused.
+
+The first check of a new server runs on the background service's schedule. To check it right away: `mis check <name>`.
 
 ---
 
@@ -208,13 +212,13 @@ Make-It-Safer settings      ↑/↓ move · Enter change · q quit
 | `schedule.data_changes` | `30m` (at least 10m) | How often to ask Debian, Ubuntu and CISA whether their data changed; if it did, everything is checked again |
 | `schedule.full_check` | `6h` (at least 30m) | How often to check everything again anyway, including this computer |
 | `schedule.servers` | `12h` (at least 1h) | How often to log in to your servers and read their installed packages (needs unlocked) |
-| `rules.ignore.packages` / `.cves` | `linux-firmware,tzdata` | Never alert for these |
+| `rules.ignore.packages` / `.cves` | `linux-firmware,tzdata` | Never alert for these. `none` (or an empty value with `mis config set`) clears the list |
 | `terminal.app` | `default`, `iterm2`, `ghostty`, …, `custom` | The app a server button opens |
-| `terminal.command` | `foot {script}` | Only for `custom` (set it first) |
+| `terminal.command` | `foot {script}` | Only for `custom` (set it first). The command is split on spaces and quotes aren't understood, so the program and its arguments can't contain spaces (`open -a "Warp Preview" {script}` won't work) |
 | `notifications.sound` | `yes` | Play a sound with alerts |
 | `notifications.max_buttons` | `3` | Buttons per notification, servers plus "All servers…" |
 
-The settings live in `config.yaml` in Make-It-Safer's folder (`~/Library/Application Support/MakeItSafer` on macOS, `~/.config/mis` on Linux). You can still edit it by hand; `mis doctor` reports any mistake.
+The settings live in `config.yaml` in Make-It-Safer's folder (`~/Library/Application Support/MakeItSafer` on macOS, `~/.config/mis` on Linux). You can still edit it by hand. `mis` rewrites the file when you change a setting, so comments you add are lost (and a symlinked `config.yaml` becomes a regular file). A mistake in it, or a Make-It-Safer folder or file that other users can access, makes `mis` commands (`mis doctor` too) stop with a message that says what to fix.
 
 ---
 
@@ -225,7 +229,7 @@ The settings live in `config.yaml` in Make-It-Safer's folder (`~/Library/Applica
 3. Remove the service, `mis` and the macOS helper:
    - Installed with the script: `mis service uninstall`, then `rm ~/.local/bin/mis`, and on macOS `rm -rf ~/Applications/"Make-It-Safer Notifier.app"`.
    - Built from source: `make uninstall` (in the repository).
-4. Delete Make-It-Safer's folder (see [Settings](#settings)) to remove your settings and encrypted key.
+4. Delete Make-It-Safer's folder (see [Settings](#settings)) to remove your settings and encrypted key. On macOS also delete the log folder, `~/Library/Logs/MakeItSafer`: it holds server names and CVE IDs.
 
 ---
 
@@ -235,13 +239,15 @@ Start with **`mis doctor`**: it checks everything and says what to do.
 
 | Problem | What to do |
 |---|---|
-| No notifications (macOS) | `mis notify setup`: it opens the right page in System Settings, checks the result and shows a test. (The helper app lives in `~/Applications`; `make install` puts it there.) |
+| No notifications (macOS) | `mis notify setup`: it opens the right page in System Settings, checks the result and shows a test. (The helper app lives in `~/Applications`; the install script or `make install` puts it there.) |
 | No notifications (Linux) | Your desktop needs a notification service (GNOME and KDE have one). Test with `mis notify test`. |
 | A button does nothing | Check the terminal in `mis doctor`. On Linux, the service may not see your desktop: `systemctl --user import-environment DISPLAY WAYLAND_DISPLAY DBUS_SESSION_BUS_ADDRESS`, then `mis service install`. |
 | "locked" | `mis unlock` |
 | "locked" although auto-unlock is on | Did you run `mis lock`? Otherwise macOS may be waiting for you to allow Keychain access, or it was denied: `mis auto-unlock on` sets it up again. |
 | "host key mismatch" | The server's identity changed. If you reinstalled it, that's expected: `mis server remove <name> --forget`, then add it again and compare the fingerprint. If you didn't, **don't connect**: someone may be intercepting the connection. |
 | "Vulnerability data is getting old" | Check your internet connection; `mis doctor` shows which source doesn't answer. |
-| Too many heads-ups | Raise `rules.early_warning.min_severity`, or set `enabled: false`. |
+| "Package lists are getting old" | The named server's list isn't refreshing: `mis unlock` if the service is locked, or `mis check` to see why that server fails (host key, login, network). |
+| Too many heads-ups | Raise the score with `mis config set rules.early_warning 9.5`, or turn heads-ups off with `mis config set rules.early_warning off`. |
+| Commands say `run: mis init`, but `mis init` says it's already set up | `config.yaml` was deleted. `mis init` creates it again with the default settings and leaves your key alone. Add your servers again with `mis server add`. |
 | Forgot the passphrase | It can't be recovered. Remove each server (`mis server remove`), delete `key.enc` from Make-It-Safer's folder, run `mis init`, and add the servers again. (With auto-unlock on, the service still unlocks until then, but the passphrase is needed to change settings that ask for it.) |
 | Anything else | `mis service logs` shows the background service's log. |

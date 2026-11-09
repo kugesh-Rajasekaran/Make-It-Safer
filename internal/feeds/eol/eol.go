@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/kugesh-rajasekaran/make-it-safer/internal/apperr"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/feeds"
 )
 
@@ -54,6 +55,9 @@ func (c *Client) Cycles(ctx context.Context, product string) ([]Cycle, error) {
 	}
 	if err := c.Feeds.GetJSON(ctx, fmt.Sprintf("%s/%s.json", c.API, product), &raw); err != nil {
 		return nil, err
+	}
+	if len(raw) == 0 { // "[]" or "null" is no answer; reading it as "supported" would resolve end-of-life findings
+		return nil, apperr.New(apperr.FeedsInvalidData, "endoflife.date listed no releases for "+product)
 	}
 	out := make([]Cycle, 0, len(raw))
 	for _, r := range raw {

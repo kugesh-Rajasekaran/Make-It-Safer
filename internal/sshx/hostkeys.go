@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"net"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -24,7 +25,9 @@ import (
 // User is the read-only account Make-It-Safer logs in as.
 const User = "mis"
 
-const dialTimeout = 15 * time.Second
+// dialTimeout bounds connecting and the SSH handshake. A variable so tests
+// can shorten it.
+var dialTimeout = 15 * time.Second
 
 // Target is a server as the SSH client sees it.
 type Target struct {
@@ -63,6 +66,8 @@ func FetchHostKey(ctx context.Context, t Target) (ssh.PublicKey, error) {
 		return nil, err
 	}
 	defer func() { _ = conn.Close() }()
+	stop := bound(ctx, conn)
+	defer stop()
 	if _, _, _, err := ssh.NewClientConn(conn, t.Addr(), conf); key == nil {
 		return nil, apperr.Wrap(apperr.ServerUnreachable, err, "cannot read the SSH host key of "+t.Addr())
 	}
@@ -89,11 +94,18 @@ func UserKnownHost(t Target, key ssh.PublicKey) string {
 	switch {
 	case err == nil:
 		return "match"
-	case errors.As(err, &keyErr) && len(keyErr.Want) > 0:
+	case errors.As(err, &keyErr) && sameTypeKnown(keyErr.Want, key):
 		return "mismatch"
 	default:
 		return "unknown"
 	}
+}
+
+// sameTypeKnown reports whether known_hosts holds a key of the same type as
+// key under a different value. An entry of another type (say ECDSA while the
+// server presented Ed25519) says nothing about this key: it is not a mismatch.
+func sameTypeKnown(want []knownhosts.KnownKey, key ssh.PublicKey) bool {
+	return slices.ContainsFunc(want, func(w knownhosts.KnownKey) bool { return w.Key.Type() == key.Type() })
 }
 
 // HostKeys is Make-It-Safer's own known_hosts file of pinned host keys.
@@ -187,6 +199,14 @@ func (h HostKeys) otherLines(t Target) ([]string, error) {
 		}
 	}
 	return keep, nil
+}
+
+// bound limits the SSH handshake on conn to dialTimeout and ends it when ctx
+// is done. ClientConfig.Timeout only covers the TCP dial, so without this a
+// server that accepts the connection and never answers would block forever.
+func bound(ctx context.Context, conn net.Conn) (stop func() bool) {
+	_ = conn.SetDeadline(time.Now().Add(dialTimeout))
+	return context.AfterFunc(ctx, func() { _ = conn.Close() })
 }
 
 func dial(ctx context.Context, t Target) (net.Conn, error) {

@@ -6,6 +6,7 @@ package cli
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"io"
 	"log/slog"
@@ -18,6 +19,7 @@ import (
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/apperr"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/config"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/daemon"
+	"github.com/kugesh-rajasekaran/make-it-safer/internal/notify"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/vault"
 )
 
@@ -33,8 +35,10 @@ type app struct {
 
 	unlocked *vault.Key // set while mis init holds the key, so it isn't asked for again
 	// Replaced in tests.
-	kdf            func() vault.Params
-	installService func(config.Paths) (*daemon.ServiceInfo, error)
+	kdf              func() vault.Params
+	installService   func(config.Paths) (*daemon.ServiceInfo, error)
+	uninstallService func(config.Paths) error
+	desktop          func(context.Context, config.Paths, *slog.Logger) notify.Notifier
 }
 
 // Execute runs mis with the process arguments and returns the exit code.
@@ -57,8 +61,10 @@ func newApp(args []string, stdin *os.File, stdout, stderr io.Writer) *app {
 		stderr: stderr,
 		log:    slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: slog.LevelWarn})),
 
-		kdf:            vault.DefaultParams,
-		installService: daemon.InstallService,
+		kdf:              vault.DefaultParams,
+		installService:   daemon.InstallService,
+		uninstallService: daemon.UninstallService,
+		desktop:          notify.Desktop,
 	}
 }
 

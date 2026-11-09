@@ -115,7 +115,7 @@ func TestReachable(t *testing.T) {
 	if !strings.Contains(r.Fix, strings.TrimPrefix(srv.URL, "http://")) {
 		t.Errorf("fix doesn't name the hosts: %q", r.Fix)
 	}
-	if len(Sources) != 6 {
+	if len(Sources) != 6 { // the Mac-only source comes on top (SourcesFor)
 		t.Errorf("%d sources; keep this list in step with docs/design.md §4.9", len(Sources))
 	}
 	for _, s := range Sources { // the real list only uses allowlisted hosts
@@ -127,9 +127,30 @@ func TestReachable(t *testing.T) {
 
 func TestServers(t *testing.T) {
 	servers := []config.Server{{Name: "web"}, {Name: "db"}}
-	want(t, "none", Servers(nil, nil, now), Warn, "no servers")
-	want(t, "fresh", Servers(servers, map[string]time.Time{"web": now.Add(-time.Hour), "db": now.Add(-13 * time.Hour)}, now), OK, "all 2")
-	want(t, "stale", Servers(servers, map[string]time.Time{"web": now.Add(-48 * time.Hour)}, now), Warn, "db: never checked")
+	const day = 26 * time.Hour // the limit with a refresh every 12 hours
+	want(t, "none", Servers(nil, nil, day, now), Warn, "no servers")
+	want(t, "fresh", Servers(servers, map[string]time.Time{"web": now.Add(-time.Hour), "db": now.Add(-13 * time.Hour)}, day, now), OK, "all 2")
+	want(t, "no list", Servers(servers, map[string]time.Time{"web": now.Add(-time.Hour)}, day, now), Warn, "db: no package list yet")
+	// The list's age counts, however recently the server was matched.
+	want(t, "old list", Servers(servers, map[string]time.Time{"web": now.Add(-time.Hour), "db": now.Add(-72 * time.Hour)}, day, now), Warn, "db: package list is 72h0m0s old")
+}
+
+// The limit follows the schedule: servers read every two days are not stale
+// after 30 hours, as the background service already judges them.
+func TestServersFollowTheSchedule(t *testing.T) {
+	servers := []config.Server{{Name: "web"}}
+	limit := config.Schedule{Servers: config.Duration(48 * time.Hour)}.ListStaleAfter()
+	want(t, "between refreshes", Servers(servers, map[string]time.Time{"web": now.Add(-30 * time.Hour)}, limit, now), OK, "all 1")
+	want(t, "missed", Servers(servers, map[string]time.Time{"web": now.Add(-100 * time.Hour)}, limit, now), Warn, "web: package list is 100h0m0s old")
+}
+
+// This computer's list is read at every match, not by the refresh job.
+func TestServersLeavesOutThisComputer(t *testing.T) {
+	servers := []config.Server{{Name: "this-mac", Local: true}, {Name: "web"}}
+	got := Servers(servers, map[string]time.Time{"this-mac": now.Add(-500 * time.Hour), "web": now.Add(-time.Hour)}, 26*time.Hour, now)
+	want(t, "old local list", got, OK, "all 1")
+	only := Servers([]config.Server{{Name: "this-mac", Local: true}}, map[string]time.Time{}, 26*time.Hour, now)
+	want(t, "only this computer", only, OK, "only this computer is checked")
 }
 
 func TestData(t *testing.T) {
@@ -139,6 +160,9 @@ func TestData(t *testing.T) {
 	want(t, "no service", Data(nil, now), Warn, "isn't running")
 	want(t, "never", Data(jobs(&daemon.JobState{}, nil), now), Warn, "no successful check")
 	want(t, "stale", Data(jobs(&daemon.JobState{LastOK: now.Add(-30 * time.Hour), LastError: "offline"}, nil), now), Fail, "offline")
+	if r := Data(jobs(&daemon.JobState{LastOK: now.Add(-30 * time.Hour)}, nil), now); strings.Contains(r.Detail, "()") {
+		t.Errorf("stale without an error: %q has an empty ()", r.Detail)
+	}
 	want(t, "early failing", Data(jobs(&daemon.JobState{LastOK: now.Add(-time.Hour)}, &daemon.JobState{LastOK: now.Add(-2 * time.Hour), LastError: "CVE List down"}), now), Warn, "CVE List down")
 	want(t, "fine", Data(jobs(&daemon.JobState{LastOK: now.Add(-time.Hour)}, &daemon.JobState{LastOK: now.Add(-10 * time.Minute)}), now), OK, "last check 1h0m0s ago")
 }
@@ -147,4 +171,34 @@ func host(u string) string {
 	rest, _ := strings.CutPrefix(u, "https://")
 	h, _, _ := strings.Cut(rest, "/")
 	return h
+}
+
+// Every host Make-It-Safer may connect to is one doctor probes, on a Mac that
+// checks itself (Apple's security notes are used there only).
+func TestSourcesCoverTheAllowlist(t *testing.T) {
+	probed := func(sources []Source) []string {
+		var hosts []string
+		for _, s := range sources {
+			hosts = append(hosts, host(s.URL))
+		}
+		return hosts
+	}
+	mac := probed(SourcesFor("darwin", true))
+	for _, h := range feeds.AllowedHosts {
+		if !slices.Contains(mac, h) {
+			t.Errorf("mis doctor never tries %s", h)
+		}
+	}
+	for _, tc := range []struct {
+		goos         string
+		thisComputer bool
+		n            int
+	}{{"darwin", true, 7}, {"darwin", false, 6}, {"linux", true, 6}, {"linux", false, 6}} {
+		if got := SourcesFor(tc.goos, tc.thisComputer); len(got) != tc.n {
+			t.Errorf("SourcesFor(%s, %v) has %d sources, want %d", tc.goos, tc.thisComputer, len(got), tc.n)
+		}
+	}
+	if len(Sources) != 6 {
+		t.Errorf("SourcesFor changed the shared list: %d sources", len(Sources))
+	}
 }

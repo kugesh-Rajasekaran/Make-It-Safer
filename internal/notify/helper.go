@@ -104,6 +104,7 @@ func (h *Helper) accept(ctx context.Context) {
 }
 
 func (h *Helper) read(conn net.Conn) {
+	defer func() { _ = conn.Close() }() // we stop reading here: for an oversize line too, so the helper sees it and reconnects
 	sc := bufio.NewScanner(conn)
 	sc.Buffer(make([]byte, 4096), 64<<10)
 	for sc.Scan() {
@@ -123,6 +124,9 @@ func (h *Helper) read(conn net.Conn) {
 			}
 			h.mu.Unlock()
 		}
+	}
+	if err := sc.Err(); err != nil && !errors.Is(err, net.ErrClosed) { // closed by us: replaced by a newer helper, or shutting down
+		h.log.Warn("notifier", "status", "helper connection closed", "error", err)
 	}
 	h.mu.Lock()
 	if h.conn == conn {

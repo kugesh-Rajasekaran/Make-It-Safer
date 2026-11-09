@@ -40,7 +40,16 @@ fi
 "$SSHD" -t || fail "sshd settings are invalid; please check $MAIN"
 reload_sshd
 
-pkill -u "$MIS_USER" >/dev/null 2>&1 || true
-userdel "$MIS_USER" >/dev/null 2>&1 || true
+# userdel refuses while the user has a process, so end its sessions and wait.
+# The home directory holds the marker: it goes only after the user is gone.
+pkill -KILL -u "$MIS_USER" >/dev/null 2>&1 || true
+i=0
+while pgrep -u "$MIS_USER" >/dev/null 2>&1 && [ "$i" -lt 10 ]; do
+    sleep 1
+    i=$((i + 1))
+done
+if id "$MIS_USER" >/dev/null 2>&1; then
+    userdel "$MIS_USER" || fail "could not remove the '$MIS_USER' user; stop its processes and run: userdel $MIS_USER"
+fi
 rm -rf "$MIS_HOME" "$LIB_DIR"
 say "done: the '$MIS_USER' user and its settings are gone"

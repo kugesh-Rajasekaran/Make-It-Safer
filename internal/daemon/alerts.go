@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -24,17 +25,6 @@ const (
 
 var icons = map[findings.Priority]string{findings.Urgent: "🔴", findings.High: "🟠", findings.Normal: "🟡"}
 
-// showLockNotice asks you to unlock after a restart.
-func (d *Daemon) showLockNotice() {
-	if d.unlocked() {
-		return
-	}
-	_ = d.notifier.Show(notify.Notification{
-		ID: lockNoticeID, Title: "Make-It-Safer is locked",
-		Body: "Unlock it so it can check your servers: click here, or run: mis unlock",
-	})
-}
-
 // alert reacts to a check. A server's first check gets one summary instead
 // of a notification per vulnerability; fixed vulnerabilities replace their
 // notification with ✅. Everything else goes through the reminders.
@@ -44,10 +34,18 @@ func (d *Daemon) alert(res *engine.Result) {
 		d.log.Warn("alert", "status", "error", "error", err)
 		return
 	}
+	for _, w := range res.Warnings {
+		d.log.Warn("check", "status", "warning", "warning", w)
+	}
+	for _, s := range res.Servers { // nobody sees these in an unattended check
+		if s.Code != "" {
+			d.log.Warn("check", "status", "error", "server", s.Server, "code", s.Code, "error", s.Error)
+		}
+	}
 	now := d.now()
 	err = findings.Update(d.paths, func(st *findings.Store) error {
 		for _, s := range res.Servers {
-			if !s.First || s.Code != "" {
+			if !s.First { // also when a refresh failed: the findings of the older list were baselined all the same
 				continue
 			}
 			for _, f := range st.Findings {
@@ -77,7 +75,7 @@ func (d *Daemon) alert(res *engine.Result) {
 				d.earlyWarningEnded(key, first, res.Changes.Resolved)
 				continue
 			}
-			_ = d.notifier.Show(notify.Notification{ID: key, Title: "✅ " + title(first), Body: "Fixed on all servers."})
+			_ = d.notifier.Show(doneNotification(key, first))
 			d.mu.Lock()
 			delete(d.clicked, key)
 			d.mu.Unlock()
@@ -136,6 +134,7 @@ func (d *Daemon) remind() error {
 		return err
 	}
 	now := d.now()
+	d.remindToUnlock(now)
 	return findings.Update(d.paths, func(st *findings.Store) error {
 		due := map[string][]*findings.Finding{}
 		for _, f := range st.Findings {
@@ -146,7 +145,8 @@ func (d *Daemon) remind() error {
 		for key := range due {
 			group := slices.DeleteFunc(slices.Clone(st.Findings), func(f *findings.Finding) bool { return !f.Open() || groupKey(f) != key })
 			if err := d.notifier.Show(d.groupNotification(key, group, fixedServers(st, key, now), cfg)); err != nil {
-				return err
+				d.log.Warn("remind", "status", "error", "group", key, "error", err)
+				continue // it's due again at the next pass; the groups already shown are still recorded
 			}
 			for _, f := range due[key] {
 				markNotified(f, now)
@@ -155,7 +155,8 @@ func (d *Daemon) remind() error {
 
 		normal := 0
 		for _, f := range st.Findings {
-			if f.Open() && f.Priority == findings.Normal && f.State != findings.StateAccepted {
+			snoozed := f.State == findings.StateSnoozed && now.Before(f.SnoozedUntil)
+			if f.Open() && f.Priority == findings.Normal && f.State != findings.StateAccepted && !snoozed {
 				normal++
 			}
 		}
@@ -165,10 +166,11 @@ func (d *Daemon) remind() error {
 			st.Notes[summaryID] = now
 		}
 
-		if last := d.sched.lastOK("match"); len(cfg.Checked()) > 0 && !last.IsZero() && now.Sub(last) > staleAfter && now.Sub(st.Notes[staleID]) > staleAfter {
-			_ = d.notifier.Show(notify.Notification{ID: staleID, Title: "Vulnerability data is getting old",
-				Body: fmt.Sprintf("The last successful check was %s ago. Check your internet connection, or run: mis check", now.Sub(last).Round(time.Hour))})
-			st.Notes[staleID] = now
+		if now.Sub(st.Notes[staleID]) > staleAfter {
+			if n, ok := d.staleNotice(cfg, now); ok {
+				_ = d.notifier.Show(n)
+				st.Notes[staleID] = now
+			}
 		}
 		return nil
 	})
@@ -244,7 +246,7 @@ func (d *Daemon) groupNotification(key string, group []*findings.Finding, fixed 
 	}
 
 	d.mu.Lock()
-	clicked := d.clicked[key]
+	clicked := maps.Clone(d.clicked[key]) // fix() writes the inner map; a nil map reads as empty
 	d.mu.Unlock()
 	shown := min(len(servers), max(1, cfg.Notifications.MaxButtons-1))
 	if len(servers) == 1 {

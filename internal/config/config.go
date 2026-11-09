@@ -39,6 +39,13 @@ type Schedule struct {
 	Servers     Duration `yaml:"servers"`      // log in to the servers and read their packages again
 }
 
+// ListStaleAfter is how old a server's package list may get before it counts
+// as stale: two refresh intervals, so one missed refresh is allowed, and at
+// least a day. The background service's warning and mis doctor use it.
+func (s Schedule) ListStaleAfter() time.Duration {
+	return max(24*time.Hour, 2*time.Duration(s.Servers))
+}
+
 // ScheduleMinimums are the shortest allowed intervals, by YAML name.
 var ScheduleMinimums = map[string]time.Duration{
 	"new_cves": 5 * time.Minute, "data_changes": 10 * time.Minute, "full_check": 30 * time.Minute, "servers": time.Hour,
@@ -230,6 +237,9 @@ var (
 	packagePattern    = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]*$`)
 )
 
+// IsCVE reports whether id looks like CVE-2024-6387 (upper case).
+func IsCVE(id string) bool { return cvePattern.MatchString(id) }
+
 // Validate checks a server entry. Names, hosts and logins can never start
 // with "-", so they can't be mistaken for ssh options.
 func (s Server) Validate() error {
@@ -335,11 +345,16 @@ func (d *Duration) UnmarshalYAML(n *yaml.Node) error {
 	return nil
 }
 
+// maxDays bounds a day count, so that days * 24h can't overflow a Duration
+// (that happens at about 106,000 days). 100 years is far more than any
+// interval is allowed to be.
+const maxDays = 36500
+
 // ParseDuration is time.ParseDuration plus a "d" (days) suffix.
 func ParseDuration(s string) (time.Duration, error) {
 	if days, ok := strings.CutSuffix(s, "d"); ok {
 		n, err := strconv.Atoi(days)
-		if err != nil || n < 0 {
+		if err != nil || n < 0 || n > maxDays {
 			return 0, fmt.Errorf("invalid duration %q", s)
 		}
 		return time.Duration(n) * 24 * time.Hour, nil

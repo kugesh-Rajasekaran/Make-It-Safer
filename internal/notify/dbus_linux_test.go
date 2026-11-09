@@ -22,9 +22,16 @@ type fakeServer struct {
 	hints    map[string]dbus.Variant
 	replaces []uint32
 	closed   []uint32
+	hang     chan struct{} // when set, Notify doesn't answer until it is closed
 }
 
 func (f *fakeServer) Notify(_ string, replaces uint32, _, _, _ string, actions []string, hints map[string]dbus.Variant, _ int32) (uint32, *dbus.Error) {
+	f.mu.Lock()
+	hang := f.hang
+	f.mu.Unlock()
+	if hang != nil {
+		<-hang
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.actions, f.hints, f.replaces = actions, hints, append(f.replaces, replaces)
@@ -152,5 +159,35 @@ func TestDBusNotifier(t *testing.T) {
 	srv.mu.Unlock()
 	if len(closed) != 1 || closed[0] != 1 {
 		t.Fatalf("closed = %v", closed)
+	}
+}
+
+// The daemon shows notifications while it holds its findings lock, so a
+// notification server that stops answering must make Show fail, not wait.
+func TestShowGivesUpOnASilentServer(t *testing.T) {
+	srv, _ := startBus(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	d, err := NewDBus(ctx, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+
+	hang := make(chan struct{})
+	defer close(hang)
+	srv.mu.Lock()
+	srv.hang = hang
+	srv.mu.Unlock()
+	defer func(orig time.Duration) { callTimeout = orig }(callTimeout)
+	callTimeout = 200 * time.Millisecond
+
+	start := time.Now()
+	err = d.Show(Notification{ID: "cve:CVE-1", Title: "t", Body: "b"})
+	if err == nil {
+		t.Fatal("Show succeeded although the server never answered")
+	}
+	if took := time.Since(start); took > 5*time.Second {
+		t.Fatalf("Show waited %s for a silent server", took)
 	}
 }

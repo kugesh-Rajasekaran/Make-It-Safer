@@ -11,7 +11,7 @@ Make-It-Safer is a command-line tool (`mis`) for people who run a few VPS server
 1. **Simple:** one program, one passphrase, a few small files. No vulnerability database to maintain.
 2. **Credentials are never stored in readable form:** the passphrase is never saved, and the login key is saved only encrypted.
 3. **Read-only on servers:** the checker can *only* read package lists. It cannot change anything.
-4. **Local:** no accounts, no cloud sync of configs, no telemetry. The internet is used only for vulnerability data and SSH.
+4. **Local:** no accounts, no cloud sync of configs, no telemetry. The internet is used only for vulnerability data and SSH. Matching sends package names and versions to OSV.dev, never server names or addresses (§4.9).
 5. **The distro decides "vulnerable":** we trust Debian and Ubuntu data, not upstream version numbers.
 6. **Nothing from outside is executed:** feed text and server output are data, never commands.
 
@@ -91,9 +91,11 @@ Match User mis
     PermitUserRC no
 ```
 
-**Safe apply:** validate with `sshd -t` → reload sshd → keep your admin session open → test as `mis` → only then finish. If any step fails, nothing is changed and the reason is shown.
+**Safe apply:** the script makes its changes, then checks them before it reloads sshd: `sshd -t` accepts the config; `root` and your admin login get the same effective settings as before; `mis` gets the forced command and the restrictions; and sshd's `AllowUsers`, `DenyUsers`, `AllowGroups` and `DenyGroups` don't lock `mis` out. Only then does it reload sshd. If a check fails, up to and including the reload, or your session drops or is stopped part-way, the script undoes what it changed and shows the reason. Running it again is safe.
 
-**How setup runs:** `mis` calls your normal `ssh` program (`ssh -t you@server "sudo bash -c …"`). That `ssh` program handles your admin password or key, and `sudo` asks on your terminal. If your admin login is `root`, no `sudo` is used. `mis` **never sees your admin credentials**.
+The login as `mis` is tested afterwards, by `mis server add` (the same checks as `mis server verify`). If a check fails, the server stays set up: the failed checks are listed, and you can fix it, re-run `mis server verify`, or take the server out with `mis server remove`.
+
+**How setup runs:** `mis` calls your normal `ssh` program (`ssh -t you@server '…'`) and pipes the script, base64-encoded, into `sh` on the server. That `ssh` program handles your admin password or key, and `sudo` asks on your terminal. If your admin login is `root`, no `sudo` is used. `mis` **never sees your admin credentials**.
 
 **Collector output** (plain text, versioned, no server-side dependencies):
 ```
@@ -104,11 +106,11 @@ kernel=6.8.0-49-generic
 arch=amd64
 reboot-required=no
 groups=mis
-pkg	libssl3t64:amd64	3.0.13-0ubuntu3.16	openssl	3.0.13-0ubuntu3.16
-pkg	openssh-server	1:9.6p1-3ubuntu13.5	openssh	1:9.6p1-3ubuntu13.5
+pkg	ii 	libssl3t64:amd64	3.0.13-0ubuntu3.16	openssl	3.0.13-0ubuntu3.16
+pkg	ii 	openssh-server	1:9.6p1-3ubuntu13.5	openssh	1:9.6p1-3ubuntu13.5
 …
 ```
-Commands used: `sed` on `/etc/os-release`, `uname -r`, `dpkg --print-architecture`, `test -e /var/run/reboot-required`, `id -Gn`, `dpkg-query -W -f=…`. None of them need root.
+Each `pkg` line is, separated by tabs: the dpkg status (`ii ` = installed), the binary package, its version, the source package and the source version. Commands used: `sed` on `/etc/os-release`, `uname -r`, `dpkg --print-architecture`, `test -e /var/run/reboot-required`, `id -Gn`, `dpkg-query -W -f=…`. None of them need root.
 
 **`mis server verify`** proves the restrictions from your computer. Each of these must be *refused* for `mis` (otherwise verify reports an error):
 - running any other command: asking for `id; touch /tmp/mis-was-here` returns collector output, and the file is never created
@@ -124,14 +126,14 @@ It also checks that the `groups=` line shows no privileged group, and prints the
 
 The key is then pinned. A mismatch later blocks the connection and triggers an urgent "possible interception" alert.
 
-**Removal:** `mis server remove` prints a teardown script (deletes the user, collector and drop-in).
+**Removal:** `mis server remove` runs a teardown script through your own `ssh` login (deletes the user, collector and drop-in), then forgets the server: its settings, pinned host key, package list and findings. The script ends the user's sessions first; if the user still can't be deleted, it stops with an error and keeps its marker, so it can be run again. `--forget` skips the script and only forgets the server. For this computer there is nothing to delete: `mis server remove this-mac` (`this-computer` on Linux) just stops checking it.
 
 ### 4.2 Vault: passphrase and key
 
 | Step | What happens |
 |---|---|
 | Setup | Generate an Ed25519 key. Encrypt it with your passphrase. Save `key.enc`. Install the public key on each server. |
-| Restart | Daemon starts **locked** → notification "Make-It-Safer is locked, click to unlock". With auto-unlock on, it unlocks itself instead (below). |
+| Restart | Daemon starts **locked** → notification "Make-It-Safer is locked, click to unlock", shown again once a day while it stays locked. With auto-unlock on, it unlocks itself instead (below). |
 | Unlock | Click → Terminal → `mis unlock` → type passphrase → key decrypted **into locked memory** → passphrase wiped |
 | Lock | Reboot, crash, logout or `mis lock` → key gone. After `mis lock` it stays locked until `mis unlock` or the next start. |
 
@@ -146,14 +148,15 @@ The key is then pinned. A mismatch later blocks the connection and triggers an u
 
 **Key file format (`key.enc`):**
 - Argon2id key derivation, using RFC 9106 recommended parameters:
-  - **2 GiB, t=1, p=4** on machines with ≥ 8 GB RAM
+  - **2 GiB, t=1, p=4** on machines with at least 8 GiB of usable memory (a Linux computer sold as 8 GB may report a little less and get the 64 MiB setting)
   - **64 MiB, t=3, p=4** otherwise
 - Random 16-byte salt.
 - XChaCha20-Poly1305 encryption with a random 24-byte nonce. The header (format version, KDF parameters, salt) is authenticated.
 - Parameters are stored in the header so they can be raised later (`mis passphrase change`).
 
 **Memory hygiene:**
-- Secrets in `memguard` locked buffers (no swap), wiped after use.
+- The decrypted key lives in a `memguard` locked buffer (no swap): in the daemon for as long as it is unlocked, and in a `mis` command that unlocks the key itself (`mis init`, `mis server add` and `verify`, `mis check` when the service is locked or not running, `mis auto-unlock on`, `mis passphrase change`) until that command ends.
+- The passphrase, the socket line carrying it, and the short-lived key copies used to unlock and sign are ordinary memory, wiped after use. Go's crypto code keeps copies it can't be asked to wipe: the expanded Ed25519 key in its key cache, and the key schedule inside each XChaCha20-Poly1305 object. They stay until the memory is reused.
 - Core dumps disabled (`RLIMIT_CORE=0`).
 - Linux: `PR_SET_DUMPABLE=0` blocks same-user debuggers. macOS: `PT_DENY_ATTACH`.
 - Unlock attempts are rate-limited, with exponential delay.
@@ -171,7 +174,7 @@ The key is then pinned. A mismatch later blocks the connection and triggers an u
 - **CLI ↔ daemon:**
   - Unix socket, mode 0600. The peer is checked with `SO_PEERCRED`/`getpeereid` (same user only).
   - Commands: unlock, lock, status, check, ack, fix, …
-  - When the daemon isn't running, commands that need the key ask for the passphrase themselves.
+  - When the daemon isn't running or is locked, commands that need the key ask for the passphrase themselves.
 - **States:**
   - `LOCKED`: feeds and matching keep running against the **saved package lists**. No SSH.
   - `UNLOCKED`: also refreshes package lists over SSH.
@@ -184,7 +187,7 @@ The key is then pinned. A mismatch later blocks the connection and triggers an u
 | Job | Source | Default interval | Needs unlock? |
 |---|---|---|---|
 | Feed change check | OSV `modified_id.csv` for Debian and Ubuntu (HEAD + ETag, a few bytes), plus the CISA KEV catalog (ETag) | 30 min | No |
-| Match | OSV `POST /v1/querybatch` (one request per server, ≤ 1000 packages) | When a feed changed, and every 6 h regardless | No (uses saved package lists) |
+| Match | OSV `POST /v1/querybatch` (all servers together, ≤ 1000 queries per request) | When a feed changed, and every 6 h regardless | No (uses saved package lists) |
 | Vulnerability details | OSV `GET /v1/vulns/{id}`, cached by `modified` time | On new or changed IDs | No |
 | Exploited list | CISA KEV JSON (GitHub mirror as fallback, saved copy when offline) | With the feed check | No |
 | Exploit probability | EPSS API, only for findings that can alert | With each match | No |
@@ -210,7 +213,7 @@ Query by **source package name and version** (e.g. `openssh`), because that is h
 
 **Findings:** one finding is (server, vulnerability, source package).
 ```
-new ──► notified ──► (snoozed / accepted) ──► resolved ✅
+new ──► notified ──► (snoozed ⇄ accepted) ──► resolved ✅
  ▲                                                │
  └──────────── reopened (e.g. package downgraded) ┘
 ```
@@ -223,7 +226,7 @@ new ──► notified ──► (snoozed / accepted) ──► resolved ✅
 |---|---|---|
 | 🔴 Urgent | Actively exploited (KEV), or severity ≥ 9 with a fix available, or OS end-of-life | Every 4 h |
 | 🟠 High | Severity ≥ 7, or EPSS ≥ 10%, or a patched kernel waiting for reboot > 3 days | Daily |
-| 🟡 Normal | Other vulnerabilities with a fix available | Weekly summary |
+| 🟡 Normal | Other vulnerabilities with a fix available | Weekly summary (counts what is open: not snoozed, accepted or fixed) |
 | ⚪ Silent | No fix yet and not urgent; listed in `mis findings` only | none |
 
 Severity is the highest CVSS base score in the CVE record (from the CNA or CISA). When there is none, the distro's own rating (Ubuntu priority, Debian urgency) stands in. Scores and EPSS are only fetched for findings that can alert (those with a fix, unless `unfixed: all`).
@@ -245,7 +248,7 @@ rules:
   remind: { urgent: 4h, high: 24h, normal: 7d }
 ```
 
-**First check after adding a server:** one *summary* notification per server ("ovh-web-1: 14 open vulnerabilities, 2 urgent"), not 14 separate ones. Alerts per CVE start from then on.
+**First check after adding a server:** one *summary* notification per server ("ovh-web-1: 14 open vulnerabilities, 2 urgent"), not 14 separate ones. Alerts per CVE start from then on. This holds whichever process runs that first check: the first check records its findings as already announced, so `mis check` while the service is locked doesn't cause a flood at the next reminder.
 
 ### 4.5 Early warning (unconfirmed)
 
@@ -293,7 +296,7 @@ On a typical server (369 source packages), two days of real CVEs (1,236 records)
 | Clicking the body | Opens the "All servers…" picker | Same (`default` action) |
 
 - **"All servers…"** opens a terminal picker (`mis pick CVE-…`) that stays open. Choose a server and its SSH window opens.
-- **As fixes land:** "2 of 3 fixed" … then ✅ "fixed on all servers" replaces the notification.
+- **As fixes land:** "2 of 3 fixed" … then ✅ replaces the notification: "fixed on all servers" for a CVE, "macOS 15.8.2 installed" for an Apple update, "web restarted" after a restart.
 - **Lock notice:** "Make-It-Safer is locked, click to unlock" → opens Terminal with `mis unlock`.
 - **Buttons:** `notifications.max_buttons` (default 3) counts the server buttons plus "All servers…".
 - **Without the background service:** `mis fix <server> [CVE]` and `mis pick <CVE>` open the same SSH sessions from the command line.
@@ -303,18 +306,20 @@ On a typical server (369 source packages), two days of real CVEs (1,236 records)
 1. **Click a server button** → the daemon checks that the server and CVE exist in its own state (it ignores anything else).
 2. **Write a launcher script** in a private temp dir (0700, auto-deleted). It contains no secrets.
 3. **Open the terminal** (config `terminal:`):
-   - **default** = macOS `open -a Terminal x.command`, or Linux `$TERMINAL` → `x-terminal-emulator` → `gnome-terminal`/`kgx`/`konsole`/`xfce4-terminal` → `xterm`
-   - Also: `iterm2`, `ghostty`, `kitty`, `alacritty`, `wezterm`, or a custom `"cmd {script}"`
+   - **default** = macOS `open -a Terminal x.command`, or on Linux the first that exists of `$TERMINAL` (only a plain program name: it is ignored if it has a space or `/`), `x-terminal-emulator`, `gnome-terminal`, `konsole`, `xfce4-terminal`, `kgx`, `kitty`, `alacritty`, `wezterm`, `ghostty`, `xterm`
+   - Also: `iterm2`, `ghostty`, `kitty`, `alacritty`, `wezterm`, or a custom `"cmd {script}"`. The custom command is split on spaces and quotes aren't understood, so the program and its arguments can't contain spaces (`{script}` itself may expand to a path with spaces).
+   - `$TERMINAL` gets the same arguments as the terminal of that name in the list (`wezterm start --`, kitty takes the script as is), and `-e` when it isn't in the list.
+   - **A terminal that doesn't open is an error.** On macOS the daemon waits (up to 10 s) for `open` to accept the request; on Linux a terminal that exits at once with an error counts as failed. The click then shows an error notification (with what the terminal said): no ✓ on the button and no follow-up checks.
 4. **SSH as you:** `ssh -t <admin_ssh>` (e.g. `ubuntu@51.x.x.x` or your `~/.ssh/config` alias). Your own keys and password prompts apply, and `mis` stores only this login name.
 5. **On the server, before the prompt**, a short bash snippet shows the banner and runs `read -e -i "<command>"`, so the command is already typed in. Nothing runs without Enter:
 ```
-⚠ Make-It-Safer · ovh-web-1
-  CVE-2026-XXXXX  openssh  actively exploited  CVSS 9.8
-  installed 1:9.6p1-3ubuntu13.5 → fixed in 1:9.6p1-3ubuntu13.8
-  Enter = run · edit first · Ctrl-C = skip to normal shell
+Make-It-Safer · ovh-web-1
+  CVE-2026-XXXXX  openssh  installed 1:9.6p1-3ubuntu13.5 → fixed in 1:9.6p1-3ubuntu13.8  (actively exploited)
+Enter = run · edit it first · Ctrl-C = skip to a normal shell
 
 ubuntu@ovh-web-1:~$ sudo apt-get update && sudo apt-get install --only-upgrade openssh-server openssh-client▌
 ```
+   One line per finding (at most 8, then "…and N more"). Notes follow, each marked with ⚠: for example that the fix comes from Ubuntu Pro, or that you should restart afterwards.
    - **Enter** runs it. apt still asks `[Y/n]`, so you see what changes first.
    - **Ctrl-C** at the prompt, or while the command runs, leaves you in a normal shell. The line is read, and the command run, in subshells with normal Ctrl-C, because bash's `read -e` ignores a trapped Ctrl-C.
    - The snippet travels base64-encoded (`bash -c "$(printf %s … | base64 -d)"`), so no quoting breaks on the way.
@@ -325,7 +330,7 @@ ubuntu@ovh-web-1:~$ sudo apt-get update && sudo apt-get install --only-upgrade o
 | Case | Command |
 |---|---|
 | Debian/Ubuntu package | `sudo apt-get update && sudo apt-get install --only-upgrade <installed binaries of the source package>` |
-| Kernel | Upgrade the installed kernel meta-packages (e.g. `linux-image-generic` on Ubuntu, `linux-image-amd64` on Debian). The banner adds: "then run `sudo reboot`" (never auto-run). |
+| Kernel | Upgrade the installed kernel meta-packages (e.g. `linux-image-generic`, `linux-generic-hwe-22.04` or `linux-oem-24.04` on Ubuntu, `linux-image-amd64` on Debian). The banner adds: "then run `sudo reboot`" (never auto-run). |
 | Restart needed (a newer kernel is installed) | `sudo reboot`, typed in like any other fix |
 | Fix only via Ubuntu Pro | The same apt command; the banner adds that it needs Ubuntu Pro (`sudo pro attach`). Once attached, apt installs the fix. |
 | Admin login is `root` | Same commands without `sudo` |
@@ -346,9 +351,9 @@ mis config                       every setting in one list: ↑/↓ move, Enter 
 mis config get [name] | set <name> <value>   the same settings for scripts and agents
 mis status                       locked?, last checks, open findings per server
 mis findings [--server X]        what is vulnerable where
-mis show CVE-…                   details, servers, fix commands
+mis show CVE-…                   details, servers, fixed versions
 mis check [server]               run checks now
-mis fix <server> [CVE…]          same as clicking a button
+mis fix <server> [CVE-…]         with a CVE: same as clicking that button; without one: everything fixable on the server
 mis pick CVE-…                   server picker (used by "All servers…")
 mis ack CVE-… [--server X] [--until DATE] [--reason TEXT]
 mis passphrase change            re-encrypt key with a new passphrase
@@ -356,7 +361,8 @@ mis notify setup                 allow notifications (opens System Settings on m
 mis notify test                  send a test notification with buttons
 mis service install|uninstall|status|logs
 mis doctor                       files, sync, service, notifications, terminal, desktop session,
-                                 data sources, servers, data age; each problem with its fix
+                                 data sources (incl. Apple's security notes on a Mac that checks itself),
+                                 servers, data age; each problem with its fix
 ```
 
 ### 4.9 Files and network
@@ -372,11 +378,18 @@ Files live in `~/.config/mis` (Linux) or `~/Library/Application Support/MakeItSa
 | `known_hosts` | Pinned server host keys | No |
 | `state/inventory/<server>.json` | Last package list | No (sensitive) |
 | `state/findings.json` | Findings, snoozes, notification IDs | No |
-| `state/cache/` | OSV/KEV/EPSS/CVE cache and ETags | No |
+| `state/cache/` | OSV/KEV/EPSS/CVE cache and ETags. The CVE and OSV record files not written for 30 days are deleted, checked once a day | No |
 
 There's no cloud sync and no telemetry. `mis doctor` warns if the directory sits inside a synced folder (iCloud Drive, Dropbox, …).
 
-**Outbound connections:** `api.osv.dev`, `osv-vulnerabilities.storage.googleapis.com`, `raw.githubusercontent.com` (CVE List, KEV mirror), `www.cisa.gov`, `api.first.org`, `endoflife.date`, `support.apple.com` (Apple security notes, only when this computer is a Mac, ADR 0003), and your servers over SSH. Nothing else. (`softwareupdate` and Homebrew, which `mis` runs to read a Mac, contact Apple and Homebrew themselves, as they always do.)
+**Outbound connections:** `api.osv.dev`, `osv-vulnerabilities.storage.googleapis.com`, `raw.githubusercontent.com` (CVE List, KEV mirror), `www.cisa.gov`, `api.first.org`, `endoflife.date`, `support.apple.com` (Apple security notes, only when this computer is a Mac, ADR 0003), and your servers over SSH. Nothing else. A redirect is followed only to another URL on this list over HTTPS; any other is refused. (`softwareupdate`, which `mis` runs to read a Mac, contacts Apple itself, as it always does. `brew outdated` runs with Homebrew's auto-update and analytics switched off.)
+
+**What is sent:**
+- To `api.osv.dev`: one query per installed source package of the checked servers and of a Linux desktop, with the package name, its version and the OS release as OSV's ecosystem (e.g. `Debian:12`; Ubuntu LTS releases are asked twice, standard and Pro). Then it fetches the records that matched, by ID (for an early warning, also the distro's record of a CVE ID). A Mac's package list is never sent: it is matched against Apple's notes on your computer.
+- To `api.first.org` (EPSS) and `raw.githubusercontent.com` (CVE List): the CVE IDs of findings that can alert (§4.4).
+- Everything else is a plain download (KEV, endoflife.date for the operating systems you use, Apple's public pages).
+- Not sent: server names, host names, IP addresses, SSH logins, kernel versions.
+- Every request carries `User-Agent: make-it-safer/<version>`, and the service sees your computer's IP address, as with any web request.
 
 ### 4.10 This computer (optional)
 
@@ -392,7 +405,7 @@ The computer `mis` runs on can be checked too: `mis init` asks (default yes), or
 | Button opens | A local terminal with the fix typed in | System Settings › Software Update |
 
 - It's checked with every match (every 6 h, and right after wake-up) and after its button is clicked; its findings use the name `this-mac` (Linux: `this-computer`), which no server may use.
-- If any part can't be read (e.g. `softwareupdate` fails, or Apple's notes are unreachable with no saved copy), the check reports an error and keeps the last findings: a missing answer never resolves anything.
+- If any part can't be read (e.g. `softwareupdate` fails, or Apple's notes are unreachable with no saved copy), the check reports an error and keeps the last findings: a missing answer never resolves anything. The same goes for a page that arrives but can't be read (an error page, a changed layout), even when an older saved copy exists.
 
 ---
 
@@ -412,7 +425,7 @@ The computer `mis` runs on can be checked too: `mis init` asks (default yes), or
 | Another local user | 0700/0600 permissions, socket peer-UID check |
 | Fake button events | The daemon acts only on (server, CVE) pairs in its own state, with commands it built itself. Clicks come only from the macOS helper (same-user socket) or the D-Bus notification server (other senders are ignored). |
 | Secrets in logs | Passphrases and keys are never logged; a test scans a fully logged unlock/check/lock/wrong-passphrase run for them. |
-| Misconfigured sshd locks you out | `sshd -t` before reload, admin session kept open, automatic rollback |
+| Misconfigured sshd locks you out | `sshd -t` and probes of the effective settings before the reload; any failure up to and including the reload is rolled back automatically; the login test as `mis` runs afterwards and lists what failed |
 
 ### 5.2 Passphrase standard
 
@@ -448,7 +461,7 @@ The computer `mis` runs on can be checked too: `mis init` asks (default yes), or
 | Linux notifications | `godbus/dbus/v5` |
 | macOS notifications | Swift helper app (SwiftPM), UserNotifications framework |
 | Config | YAML (`go.yaml.in/yaml/v3`, the maintained successor of `gopkg.in/yaml.v3`); state as JSON with atomic writes |
-| Install | `install.sh` downloads the release archive for the OS and processor, checks its SHA-256 checksum and installs without sudo. A version tag runs `.github/workflows/release.yml`, which builds macOS (arm64, amd64; helper universal, ad-hoc signed) and Linux (amd64, arm64) archives. From source: `make install`. |
+| Install | `install.sh` downloads the release archive for the OS and processor, checks its SHA-256 checksum and installs without sudo. A version tag runs `.github/workflows/release.yml`: it first runs `make check` and `govulncheck` on the newest Go 1.26 patch release, then builds macOS (arm64, amd64, built for macOS 13 or later; helper universal, ad-hoc signed) and Linux (amd64, arm64) archives. From source: `make install`. |
 
 The package layout is in `CLAUDE.md` (Layout).
 
@@ -465,8 +478,10 @@ The package layout is in `CLAUDE.md` (Layout).
 | `Match` blocks inside `sshd_config.d` drop-ins on each distro | Covered by the M2 Docker matrix. Fallback: append to `sshd_config`. |
 | Linux: opening a terminal from a systemd user service needs the desktop's `DISPLAY`/`WAYLAND_DISPLAY` | Spike S3 on your Linux desktop. `mis doctor` checks it. |
 | KDE/other Linux notification servers ignoring `resident` | Detect via `GetCapabilities`. Fallback: re-post like macOS. |
-| OSV API unavailable | Retry with backoff. `mis status` shows feed age. Alert if data is stale for more than 24 h. |
-| Laptop asleep → missed checks | Catch up on wake. Weekly summary shows the last successful check per server. |
+| OSV API unavailable | Retry with backoff. `mis status` shows feed age. Alert if the last successful check is more than 24 h old. |
+| EPSS or CVE record lookup fails | The finding keeps the score it had (a failed lookup is never stored as 0, which would lower its priority and bring back an accepted finding when the source recovers). `mis check` and the log show a warning. |
+| Laptop asleep → missed checks | Catch up on wake. |
+| A server's package list stops refreshing (service locked, server unreachable) | The checks keep succeeding on the old list, so each server's list has its own age: a "getting old" warning names every server whose list is more than 24 h old (twice the refresh interval, if that is longer). `mis doctor` reports the same. |
 
 ---
 

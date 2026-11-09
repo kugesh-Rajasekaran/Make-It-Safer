@@ -60,9 +60,10 @@ func readLine(r io.Reader) (secret.Bytes, error) {
 		case 3, 4: // Ctrl-C, Ctrl-D
 			buf.Wipe()
 			return nil, apperr.New(apperr.CLIInputAborted, "cancelled")
-		case 21: // Ctrl-U
+		case 21: // Ctrl-U: start over, also after too much input
 			buf.Wipe()
 			buf = buf[:0]
+			overflow = false
 		case 127, 8: // Backspace / Delete
 			if len(buf) > 0 {
 				_, size := utf8.DecodeLastRune(buf)

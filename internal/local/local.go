@@ -35,7 +35,7 @@ func Collect(ctx context.Context, now time.Time) (*inventory.Inventory, error) {
 		if err != nil {
 			return nil, err
 		}
-		return inventory.Parse(out, now)
+		return parseLinux(out, now)
 	}
 	return nil, apperr.New(apperr.ServerUnsupportedOS, "checking this computer needs macOS, Ubuntu or Debian")
 }
@@ -89,7 +89,27 @@ func collectMac(ctx context.Context, now time.Time) (*inventory.Inventory, error
 	return inv, nil
 }
 
+// parseLinux reads the collector's output for this computer. The groups=
+// line is dropped first: it lists the invoking user's groups, which are not
+// used for this computer, and a desktop joined to a directory has group names
+// the strict server pattern rejects ("domain users@corp.example.com"). Servers
+// keep the strict check, since there the line proves what "mis" belongs to.
+func parseLinux(out []byte, now time.Time) (*inventory.Inventory, error) {
+	var kept strings.Builder
+	for line := range strings.Lines(string(out)) {
+		if !strings.HasPrefix(line, "groups=") {
+			kept.WriteString(line)
+		}
+	}
+	return inventory.Parse([]byte(kept.String()), now)
+}
+
 const maxOutput = 4 << 20
+
+// waitDelay is how long run waits for a command's output pipes to close after
+// the command was killed. A child that keeps them open would otherwise hold
+// run past its timeout.
+var waitDelay = 5 * time.Second
 
 // run runs a command with a timeout and returns its standard output.
 func run(ctx context.Context, timeout time.Duration, env []string, stdin, name string, args ...string) ([]byte, error) {
@@ -97,6 +117,7 @@ func run(ctx context.Context, timeout time.Duration, env []string, stdin, name s
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...) //nolint:gosec // fixed system tools, no outside input
 	cmd.Env = append(os.Environ(), env...)
+	cmd.WaitDelay = waitDelay
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
 	}

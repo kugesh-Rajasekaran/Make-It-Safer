@@ -31,7 +31,7 @@ var Summary = []string{
 	"installs your Make-It-Safer public key as its only key",
 	"installs the read-only collector at /usr/local/lib/mis/collect",
 	`tells sshd that "mis" may only run the collector: no shell, no terminal, no forwarding`,
-	"checks the result, proves no other user's SSH settings changed, and rolls back on any error",
+	"checks the result, proves root's and your admin login's SSH settings are unchanged, and rolls back on any error or if the session drops",
 }
 
 var (
@@ -80,7 +80,7 @@ func RunAsAdmin(ctx context.Context, s config.Server, script string, stdin *os.F
 	if err := cmd.Run(); err != nil {
 		var exit *exec.ExitError
 		if errors.As(err, &exit) {
-			return apperr.Wrap(apperr.SetupFailed, err, "the script failed on "+s.Name+" (see its output above); nothing was left half-done")
+			return apperr.Wrap(apperr.SetupFailed, err, "the script stopped on "+s.Name+" (see its output above); if it stopped part-way, run it again, it is safe to repeat")
 		}
 		return apperr.Wrap(apperr.SetupFailed, err, "cannot run ssh")
 	}

@@ -44,6 +44,7 @@ func Load(paths config.Paths) (*Store, error) {
 	if err := json.Unmarshal(data, s); err != nil {
 		return nil, apperr.Wrap(apperr.FindingsStateDamaged, err, "state/findings.json is damaged; move it away and run: mis check")
 	}
+	s.Findings = slices.DeleteFunc(s.Findings, func(f *Finding) bool { return f == nil }) // "null" entries in a hand-edited file
 	if s.Checked == nil {
 		s.Checked = map[string]time.Time{}
 	}
@@ -108,6 +109,7 @@ func (s *Store) Merge(server string, current []*Finding, kinds []Kind, now time.
 		old.LastSeen = now
 		switch {
 		case wasResolved:
+			old.FirstSeen = now // a new occurrence: the reboot grace period starts again
 			_ = old.Transition(StateNew, now)
 			ch.Reopened = append(ch.Reopened, old)
 		case old.Priority > oldPriority && old.Priority >= High:

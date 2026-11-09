@@ -29,19 +29,26 @@ const (
 	watchFor = 7 * 24 * time.Hour
 	// An early warning without any distro data after this long ends.
 	earlyExpiry = 30 * 24 * time.Hour
+	// The record caches (CVE List and OSV) hold one file per record. They
+	// only save downloads, so files not written for this long are deleted,
+	// checked once a day.
+	cacheMaxAge = 30 * 24 * time.Hour
+	pruneEvery  = 24 * time.Hour
 )
 
 // earlyState is what the early-warning job remembers between runs.
 type earlyState struct {
 	Since time.Time            `json:"since"` // newest CVE List change set already read
 	Watch map[string]time.Time `json:"watch"` // CVE → look at it again until
+	// Pruned is when the record caches were last cleaned.
+	Pruned time.Time `json:"pruned,omitempty"`
 }
 
 // EarlyWarnings raises early warnings (docs/design.md §4.5): CVEs new in
 // the CVE List that are severe or actively exploited, name software
 // installed on a server, and that the server's distro hasn't assessed yet.
 func (e *Engine) EarlyWarnings(ctx context.Context, servers []config.Server) (*Result, error) {
-	res := &Result{}
+	res := newResult()
 	rules := e.Rules.EarlyWarning
 	if !rules.Enabled {
 		return res, nil
@@ -133,11 +140,31 @@ func (e *Engine) EarlyWarnings(ctx context.Context, servers []config.Server) (*R
 		return nil, err
 	}
 	state.Since = delta.Newest
+	e.pruneCaches(state, now)
 	if err := saveEarlyState(e.Paths, state); err != nil {
 		return nil, err
 	}
 	e.Log.Info("early warning", "status", "success", "changes", len(delta.Changes), "read", len(records), "new", len(res.Changes.New), "watching", len(state.Watch))
 	return res, nil
+}
+
+// pruneCaches deletes old files from the CVE List and OSV record caches, at
+// most once a day. It runs with the early-warning job because that is what
+// fills the CVE cache fastest (every new CVE in the List). A failure is
+// logged and tried again tomorrow.
+func (e *Engine) pruneCaches(state *earlyState, now time.Time) {
+	if now.Sub(state.Pruned) < pruneEvery {
+		return
+	}
+	state.Pruned = now
+	for _, dir := range []string{e.CVE.Cache, e.OSV.Cache} {
+		removed, err := feeds.PruneDir(dir, cacheMaxAge, now)
+		if err != nil {
+			e.Log.Warn("cache prune", "status", "error", "dir", dir, "error", apperr.MessageOf(err))
+			continue
+		}
+		e.Log.Info("cache prune", "status", "success", "dir", dir, "removed", removed)
+	}
 }
 
 // fetchRecords reads the current CVE records, four at a time. A record

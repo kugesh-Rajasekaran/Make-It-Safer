@@ -54,7 +54,7 @@ Urgent, High, Normal or Silent. Decides whether and how often the user is remind
 _Avoid_: severity (severity is the CVSS score; Priority is our decision)
 
 **Source**:
-An external data provider: OSV.dev, CVE List, CISA KEV, EPSS, endoflife.date.
+An external data provider: OSV.dev, CVE List, CISA KEV, EPSS, endoflife.date, Apple security notes (this Mac).
 _Avoid_: feed provider, database
 
 **Ecosystem**:

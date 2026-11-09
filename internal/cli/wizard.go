@@ -103,7 +103,7 @@ func (w *wizard) terminal() error {
 		}
 		t := config.Terminal{App: app}
 		if app == "custom" {
-			if t.Command, err = a.ask("Command that opens a script in your terminal, with {script} for its path (e.g. foot {script})", ""); err != nil {
+			if t.Command, err = a.ask("Command that opens a script in your terminal, with {script} for its path (e.g. foot {script}). Separate parts with spaces; quotes are not understood, so use names without spaces", ""); err != nil {
 				return err
 			}
 			if !strings.Contains(t.Command, "{script}") {
@@ -176,7 +176,7 @@ func (w *wizard) servers() ([]string, error) {
 	}
 	a.say("\nFor each server, a read-only \"mis\" user is created through your own ssh login.\n" +
 		"Have your usual `ssh` login ready (keys or password: Make-It-Safer never sees it).\n")
-	var added []string
+	added := []string{} // not nil: it becomes the JSON list "servers"
 	for {
 		question := "Add a server now?"
 		if len(added) > 0 {

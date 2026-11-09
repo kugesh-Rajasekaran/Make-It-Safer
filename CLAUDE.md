@@ -12,10 +12,10 @@ Standards are adapted from the DineSynk repo (working style, engineering princip
 - **Runs on:** the user's computer (macOS first, then Linux desktop)
 - **Servers supported (v1):** Ubuntu, Debian
 - **Audience (v1):** personal use, installed with `install.sh` (GitHub Releases) or from source
-- **Vulnerability data:** OSV.dev (confirmed), CVE List (early warning), CISA KEV, EPSS, endoflife.date
-- **Status:** milestones M0–M7 built. What's left is checking on the user's own Mac, Linux desktop and servers (spikes S2, S3 and the acceptance checklist in the plan).
+- **Vulnerability data:** OSV.dev (confirmed), CVE List (early warning), CISA KEV, EPSS, endoflife.date, Apple security notes (this Mac)
+- **Status:** milestones M0–M11 built. What's left is the first release and checking on the user's own Mac, Linux desktop and servers (spikes S2, S3 and the acceptance checklist in the plan).
 
-**Source of truth:** `docs/design.md` (how it works, decisions) and `docs/implementation-plan.md` (milestones M0–M7, tasks). Domain vocabulary is in `CONTEXT.md`.
+**Source of truth:** `docs/design.md` (how it works, decisions) and `docs/implementation-plan.md` (milestones M0–M11, tasks). Domain vocabulary is in `CONTEXT.md`.
 
 ## How to Work
 
@@ -60,7 +60,7 @@ This repository is public. Anyone can read everything that is pushed (code, test
    - Passphrase, decrypted key and admin credentials are never written to disk, logs, error messages, env vars, command-line arguments or temp files.
    - The one exception is opt-in auto-unlock (ADR 0002): a random unlock key goes only to the OS secret store (macOS login Keychain) via `internal/keyring`, never anywhere else.
    - The passphrase is read only from the TTY (`golang.org/x/term`), never from flags or env.
-2. **Secrets live in locked memory** (`memguard`) and are wiped after use. Core dumps are disabled in the daemon.
+2. **The decrypted key lives in locked memory** (`memguard`); the passphrase and short-lived copies are wiped after use. Core dumps are disabled in the daemon. Don't claim more than that in docs (design §4.2 lists what Go's crypto code keeps).
 3. **`mis` never holds the user's admin login.** Server setup and fixes run through the user's own `ssh` binary in their terminal.
 4. **Server access is strictly read-only.**
    - The `mis` user gets no sudo, no groups, only the forced command, and no TTY or forwarding.
