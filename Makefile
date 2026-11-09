@@ -5,7 +5,10 @@ GO        ?= go
 BIN       := bin/mis
 MODULE    := github.com/kugesh-rajasekaran/make-it-safer
 VERSION   ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-LDFLAGS   := -s -w -X $(MODULE)/internal/cli.version=$(VERSION)
+# The recipe reads the version from the environment ($$VERSION), so its text is
+# never parsed as shell code, whatever a tag name contains.
+export VERSION
+LDFLAGS   := -s -w -X $(MODULE)/internal/cli.version=$$VERSION
 
 PREFIX    ?= $(HOME)/.local
 HELPER    := Make-It-Safer Notifier.app
@@ -14,7 +17,8 @@ OS        := $(shell uname -s)
 .PHONY: build test test-integration lint fmt fmt-check check clean macos-helper install uninstall
 
 build:
-	$(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $(BIN) ./cmd/mis
+	@case "$$VERSION" in ""|*[!0-9A-Za-z.+-]*) echo "VERSION may only contain letters, digits and . + -" >&2; exit 1 ;; esac
+	$(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/mis
 
 test:
 	$(GO) test -race ./...
@@ -57,7 +61,7 @@ endif
 # Removes the background service, mis and the helper. Your settings and
 # encrypted key stay (see docs/user-guide.md to delete them).
 uninstall:
-	-@"$(PREFIX)/bin/mis" service uninstall 2>/dev/null
+	@if [ -x "$(PREFIX)/bin/mis" ]; then "$(PREFIX)/bin/mis" service uninstall || { echo "Could not remove the background service; fix the error above, then run make uninstall again." >&2; exit 1; }; fi
 	rm -f "$(PREFIX)/bin/mis"
 ifeq ($(OS),Darwin)
 	rm -rf "$(HOME)/Applications/$(HELPER)"
