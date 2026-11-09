@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -100,5 +101,51 @@ func TestSchedulerFollowsTheConfiguredInterval(t *testing.T) {
 	s.runDue(context.Background())
 	if runs != 2 {
 		t.Fatalf("a shorter interval should apply at once; runs = %d", runs)
+	}
+}
+
+// schedule.json is ours, but a damaged or hand-edited one must not stop the
+// service from starting: it used to panic on a write into a nil map.
+func TestSchedulerStartsFromADamagedStateFile(t *testing.T) {
+	for _, tc := range []struct{ name, content string }{
+		{"null", "null"},
+		{"not json", "{match"},
+		{"empty job", `{"match": null, "gone": null}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "schedule.json")
+			if err := os.WriteFile(path, []byte(tc.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			runs := 0
+			jobs := []*job{{name: "match", every: time.Hour, run: func(context.Context) error { runs++; return nil }}}
+			s := newScheduler(jobs, path, time.Now, func() bool { return false }, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			s.runDue(context.Background())
+			if snap := s.snapshot(); runs != 1 || snap["match"] == nil || len(snap) != 1 {
+				t.Fatalf("runs %d, state %+v: want the job to run once and the state to hold only it", runs, snap)
+			}
+		})
+	}
+}
+
+// Times saved while the clock was far ahead must not keep jobs waiting once
+// the clock is right again.
+func TestSchedulerRecoversFromAClockThatWasAhead(t *testing.T) {
+	now := time.Date(2026, 11, 5, 9, 0, 0, 0, time.UTC)
+	runs := 0
+	jobs := []*job{{name: "match", every: 6 * time.Hour, run: func(context.Context) error { runs++; return nil }}}
+	s := newScheduler(jobs, filepath.Join(t.TempDir(), "schedule.json"), func() time.Time { return now }, func() bool { return false },
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	start := now
+	now = start.Add(72 * time.Hour) // the clock jumps three days ahead; the job runs
+	s.runDue(context.Background())
+	now = start // and is set right again
+	for range 8 {
+		now = now.Add(time.Hour)
+		s.runDue(context.Background())
+	}
+	if runs != 2 {
+		t.Fatalf("job ran %d times in the 8 hours after the clock was corrected; want it to run once more (it is due every 6)", runs)
 	}
 }

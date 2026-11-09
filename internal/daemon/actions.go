@@ -92,16 +92,21 @@ func (d *Daemon) fix(server, key string) error {
 		return err
 	}
 	if key != "" {
-		d.mu.Lock()
-		if d.clicked[key] == nil {
-			d.clicked[key] = map[string]bool{}
-		}
-		d.clicked[key][server] = true
-		d.mu.Unlock()
+		d.markClicked(key, server)
 		d.reshow(key, cfg)
 	}
 	d.followUp(server)
 	return nil
+}
+
+// markClicked remembers that a group's fix button was used for server.
+func (d *Daemon) markClicked(key, server string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.clicked[key] == nil {
+		d.clicked[key] = map[string]bool{}
+	}
+	d.clicked[key][server] = true
 }
 
 // reshow shows a group's notification again (macOS closes it on a click).

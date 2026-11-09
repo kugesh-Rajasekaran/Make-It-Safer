@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"maps"
 	"os"
 	"sync"
 	"time"
@@ -60,8 +61,15 @@ func newScheduler(jobs []*job, path string, now func() time.Time, hasKey func() 
 	wall := func() time.Time { return now().Round(0) }
 	s := &scheduler{jobs: jobs, path: path, now: wall, hasKey: hasKey, log: log, wake: make(chan struct{}, 1), state: map[string]*JobState{}}
 	if data, err := os.ReadFile(path); err == nil { //nolint:gosec // path is in our state dir
-		_ = json.Unmarshal(data, &s.state)
+		if err := json.Unmarshal(data, &s.state); err != nil {
+			log.Warn("schedule", "status", "error", "error", err)
+			s.state = nil
+		}
 	}
+	if s.state == nil { // damaged, or the file says null
+		s.state = map[string]*JobState{}
+	}
+	maps.DeleteFunc(s.state, func(_ string, st *JobState) bool { return st == nil })
 	for _, j := range jobs {
 		if s.state[j.name] == nil {
 			s.state[j.name] = &JobState{Next: now()} // never ran: run soon
@@ -107,6 +115,11 @@ func (s *scheduler) runDue(ctx context.Context) {
 		period := j.period()
 		s.mu.Lock()
 		st := s.state[j.name]
+		// A time saved while the clock was ahead can't be more than one
+		// period away now that it's right again.
+		if limit := s.now().Add(period); st.Next.After(limit) {
+			st.Next = limit
+		}
 		// A shorter interval set in mis config applies now, not after the
 		// old one ran out.
 		if st.Failures == 0 && !st.LastRun.IsZero() && st.LastRun.Add(period).Before(st.Next) {

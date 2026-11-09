@@ -22,6 +22,13 @@ import (
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/vault"
 )
 
+// dataFeedURLs are small files that change when Debian's or Ubuntu's
+// vulnerability data does.
+var dataFeedURLs = []string{
+	"https://osv-vulnerabilities.storage.googleapis.com/Debian/modified_id.csv",
+	"https://osv-vulnerabilities.storage.googleapis.com/Ubuntu/modified_id.csv",
+}
+
 // Daemon is the background service.
 type Daemon struct {
 	paths     config.Paths
@@ -31,6 +38,7 @@ type Daemon struct {
 	now       func() time.Time
 	newEngine func(*config.Config) *engine.Engine
 	feeds     *feeds.Client
+	feedURLs  []string // checked by jobFeeds
 
 	ctx           context.Context
 	followUpEvery time.Duration
@@ -44,11 +52,12 @@ type Daemon struct {
 	limiter   vault.Limiter
 	sched     *scheduler
 	started   time.Time
+	lockShown time.Time // when the lock notice was last shown
 }
 
 // New returns a daemon for the given install.
 func New(paths config.Paths, version string, log *slog.Logger, notifier notify.Notifier) *Daemon {
-	d := &Daemon{paths: paths, version: version, log: log, notifier: notifier, now: time.Now, feeds: feeds.New(version),
+	d := &Daemon{paths: paths, version: version, log: log, notifier: notifier, now: time.Now, feeds: feeds.New(version), feedURLs: dataFeedURLs,
 		ctx: context.Background(), followUpEvery: followUpEvery, secrets: keyring.AutoUnlock(paths.Home), clicked: map[string]map[string]bool{}}
 	d.newEngine = func(cfg *config.Config) *engine.Engine { return engine.New(paths, cfg, version, log) }
 	return d
@@ -157,6 +166,7 @@ func (d *Daemon) check(ctx context.Context, req Request) (*engine.Result, error)
 		}
 	}
 	eng := d.newEngine(cfg)
+	failed := map[string]error{}
 	if req.Refresh {
 		var signer ssh.Signer // this computer is read without the key
 		if slices.ContainsFunc(servers, func(s config.Server) bool { return !s.Local }) {
@@ -166,12 +176,14 @@ func (d *Daemon) check(ctx context.Context, req Request) (*engine.Result, error)
 			}
 			signer = key.Signer()
 		}
-		d.refreshFailed(eng.Refresh(ctx, signer, servers)) // failures also show up per server below
+		failed = eng.Refresh(ctx, signer, servers)
+		d.refreshFailed(failed)
 	}
 	res, err := eng.Match(ctx, servers)
 	if err != nil {
 		return nil, err
 	}
+	res.MarkNotRefreshed(failed) // as in mis check without the service
 	d.alert(res)
 	return res, nil
 }
@@ -182,13 +194,16 @@ func (d *Daemon) jobFeeds(ctx context.Context) error {
 	path := filepath.Join(d.paths.Cache, "feed-etags.json")
 	known := map[string]string{}
 	if data, err := os.ReadFile(path); err == nil { //nolint:gosec // our own cache file
-		_ = json.Unmarshal(data, &known)
+		if err := json.Unmarshal(data, &known); err != nil {
+			d.log.Warn("feeds", "status", "error", "error", err)
+			known = nil
+		}
+	}
+	if known == nil { // damaged, or the file says null
+		known = map[string]string{}
 	}
 	changed := false
-	for _, u := range []string{
-		"https://osv-vulnerabilities.storage.googleapis.com/Debian/modified_id.csv",
-		"https://osv-vulnerabilities.storage.googleapis.com/Ubuntu/modified_id.csv",
-	} {
+	for _, u := range d.feedURLs {
 		etag, err := d.feeds.Head(ctx, u)
 		if err != nil {
 			return err
@@ -205,7 +220,9 @@ func (d *Daemon) jobFeeds(ctx context.Context) error {
 	catalog := d.newEngine(cfg).KEV
 	kevBefore, _ := catalog.Cached()
 	kevAfter, err := catalog.Refresh(ctx)
-	if err == nil && (kevBefore == nil || kevBefore.Version != kevAfter.Version) {
+	if err != nil {
+		d.log.Warn("kev", "status", "error", "error", err)
+	} else if kevBefore == nil || kevBefore.Version != kevAfter.Version {
 		changed = true
 	}
 	if data, err := json.Marshal(known); err == nil {

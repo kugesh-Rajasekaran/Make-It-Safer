@@ -25,7 +25,7 @@ type ServiceInfo struct {
 type serviceValues struct {
 	Label  string
 	Binary string // this mis binary
-	Home   string // MIS_HOME, only when it was set
+	Home   string // MIS_HOME, only when it was set (or XDG_CONFIG_HOME was)
 	Log    string // daemon log file (macOS)
 }
 
@@ -40,7 +40,9 @@ func valuesFor(paths config.Paths) (serviceValues, error) {
 		return serviceValues{}, apperr.Wrap(apperr.ServiceInstallFailed, err, "cannot find the mis binary")
 	}
 	v := serviceValues{Label: launchLabel, Binary: exe, Log: filepath.Join(paths.Logs, "daemon.log")}
-	if os.Getenv(config.EnvHome) != "" {
+	// The service starts without your shell's environment, so a home that
+	// came from MIS_HOME or XDG_CONFIG_HOME is passed on to it.
+	if os.Getenv(config.EnvHome) != "" || os.Getenv("XDG_CONFIG_HOME") != "" {
 		v.Home = paths.Home
 	}
 	for _, s := range []string{v.Binary, v.Home, v.Log} {

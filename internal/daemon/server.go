@@ -64,12 +64,14 @@ func (d *Daemon) handle(ctx context.Context, conn *net.UnixConn) {
 		return
 	}
 	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
-	line, err := bufio.NewReader(io.LimitReader(conn, maxRequest)).ReadBytes('\n')
+	// ReadSlice returns the reader's own buffer, so clear() wipes the only
+	// copy of the line (it may hold a passphrase).
+	line, err := bufio.NewReaderSize(io.LimitReader(conn, maxRequest), maxRequest).ReadSlice('\n')
 	var req Request
 	if err == nil {
 		err = json.Unmarshal(line, &req)
 	}
-	clear(line) // may hold a passphrase
+	clear(line)
 	if err != nil {
 		writeResponse(conn, nil, apperr.Wrap(apperr.DaemonBadRequest, err, "invalid request"))
 		return
