@@ -163,6 +163,50 @@ func TestParseRecord(t *testing.T) {
 	}
 }
 
+// The CVSS vector of the chosen score and the first CWE are kept, so the
+// risk can be put into words later. A malformed vector is dropped.
+func TestParseRecordVectorAndWeakness(t *testing.T) {
+	data, err := os.ReadFile("testdata/CVE-2024-6387.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := Parse(data, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Score != 8.1 || r.Vector != "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H" || r.Weakness != "CWE-364: Signal Handler Race Condition" {
+		t.Errorf("score %v, vector %q, weakness %q", r.Score, r.Vector, r.Weakness)
+	}
+
+	record := func(t *testing.T, metrics, problems string) *Record {
+		t.Helper()
+		r, err := Parse([]byte(`{"cveMetadata": {"cveId": "CVE-2026-0001"}, "containers": {"cna": {"metrics": `+metrics+`, "problemTypes": `+problems+`}}}`), time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	cases := []struct {
+		name, metrics, problems, vector, weakness string
+	}{
+		{"v4 beats a lower v3", `[{"cvssV3_1": {"baseScore": 7.5, "vectorString": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N"}}, {"cvssV4_0": {"baseScore": 9.3, "vectorString": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N"}}]`, `[]`,
+			"CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N", ""},
+		{"garbled vector dropped", `[{"cvssV3_1": {"baseScore": 9.8, "vectorString": "AV:N; rm -rf /"}}]`, `[]`, "", ""},
+		{"no vector", `[{"cvssV3_1": {"baseScore": 5}}]`, `[]`, "", ""},
+		{"CWE with its id in the name", `[]`, `[{"descriptions": [{"cweId": "CWE-79", "description": "CWE-79: Cross-site Scripting"}]}]`, "", "CWE-79: Cross-site Scripting"},
+		{"CWE without a name", `[]`, `[{"descriptions": [{"cweId": "CWE-20"}]}]`, "", "CWE-20"},
+		{"text without a CWE id", `[]`, `[{"descriptions": [{"description": "Buffer overflow"}]}]`, "", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := record(t, c.metrics, c.problems)
+			if r.Vector != c.vector || r.Weakness != c.weakness {
+				t.Errorf("vector %q, weakness %q; want %q, %q", r.Vector, r.Weakness, c.vector, c.weakness)
+			}
+		})
+	}
+}
+
 func FuzzParse(f *testing.F) {
 	f.Add([]byte(`{"cveMetadata":{"cveId":"CVE-2026-1234"},"containers":{"cna":{"affected":[{"vendor":"a","product":"b"}]}}}`))
 	f.Fuzz(func(t *testing.T, data []byte) {

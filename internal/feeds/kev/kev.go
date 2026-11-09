@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/apperr"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/config"
@@ -25,6 +26,7 @@ type Entry struct {
 	Name       string `json:"vulnerabilityName"`
 	DateAdded  string `json:"dateAdded"`
 	Ransomware string `json:"knownRansomwareCampaignUse"`
+	Summary    string `json:"shortDescription"` // CISA's one-paragraph description; display only
 }
 
 // Catalog maps CVE IDs to entries.
@@ -40,6 +42,19 @@ func (c *Catalog) Has(cve string) bool {
 	}
 	_, ok := c.Entries[cve]
 	return ok
+}
+
+// Description returns CISA's short description of an exploited CVE, on one
+// line and at most 300 characters ("" if it isn't listed).
+func (c *Catalog) Description(cve string) string {
+	if c == nil {
+		return ""
+	}
+	s := strings.Join(strings.Fields(c.Entries[cve].Summary), " ")
+	if r := []rune(s); len(r) > 300 {
+		s = string(r[:299]) + "…"
+	}
+	return s
 }
 
 // Client downloads the catalog, keeping a copy on disk.

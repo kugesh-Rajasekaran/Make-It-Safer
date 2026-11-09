@@ -60,10 +60,22 @@ func New(fc *feeds.Client, paths config.Paths) *Client {
 
 // cached is one page's parsed content.
 type cached struct {
-	Fetched  time.Time `json:"fetched"`
-	ETag     string    `json:"etag,omitempty"`
-	Releases []Release `json:"releases,omitempty"` // the index
-	CVEs     []string  `json:"cves,omitempty"`     // a release note
+	Version  int               `json:"version,omitempty"` // cacheVersion; older copies are read again
+	Fetched  time.Time         `json:"fetched"`
+	ETag     string            `json:"etag,omitempty"`
+	Releases []Release         `json:"releases,omitempty"` // the index
+	CVEs     []string          `json:"cves,omitempty"`     // a release note
+	Impacts  map[string]string `json:"impacts,omitempty"`  // a release note: Apple's "Impact:" sentence per CVE
+}
+
+// cacheVersion 2 added Impacts.
+const cacheVersion = 2
+
+// Note is what a security note says: the CVEs it fixes and, per CVE,
+// Apple's one-line impact ("An app may be able to read kernel memory").
+type Note struct {
+	CVEs    []string
+	Impacts map[string]string
 }
 
 const (
@@ -85,6 +97,12 @@ func (c *Client) Releases(ctx context.Context) ([]Release, error) {
 
 // CVEs lists the CVEs a release fixes.
 func (c *Client) CVEs(ctx context.Context, r Release) ([]string, error) {
+	n, err := c.Note(ctx, r)
+	return n.CVEs, err
+}
+
+// Note reads a release's security note.
+func (c *Client) Note(ctx context.Context, r Release) (Note, error) {
 	url := r.URL
 	if c.Base != "" {
 		url = strings.Replace(url, "https://support.apple.com", c.Base, 1)
@@ -97,9 +115,9 @@ func (c *Client) CVEs(ctx context.Context, r Release) ([]string, error) {
 		if len(cves) == 0 && !bytes.Contains(body, []byte(noCVEsText)) {
 			return cached{}, apperr.New(apperr.FeedsInvalidData, "Apple's security note for "+r.Name+" listed no CVEs; its layout may have changed")
 		}
-		return cached{CVEs: cves}, nil
+		return cached{CVEs: cves, Impacts: ParseImpacts(body)}, nil
 	})
-	return page.CVEs, err
+	return Note{CVEs: page.CVEs, Impacts: page.Impacts}, err
 }
 
 // noCVEsText is what Apple's pages say when a release fixes no CVEs.
@@ -115,7 +133,7 @@ func (c *Client) page(ctx context.Context, url, name string, maxAge time.Duratio
 	var old cached
 	data, err := os.ReadFile(file) //nolint:gosec // our own cache directory
 	haveOld := err == nil && json.Unmarshal(data, &old) == nil
-	if haveOld && c.Now().Sub(old.Fetched) < maxAge {
+	if haveOld && old.Version == cacheVersion && c.Now().Sub(old.Fetched) < maxAge {
 		return old, nil
 	}
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -127,9 +145,13 @@ func (c *Client) page(ctx context.Context, url, name string, maxAge time.Duratio
 		return old, nil // keep using the last good copy
 	case ferr != nil:
 		return cached{}, ferr
-	case resp.NotModified:
+	case resp.NotModified && old.Version == cacheVersion:
 		old.Fetched = c.Now()
 		return old, c.save(file, old)
+	case resp.NotModified: // an older copy without everything we keep now: fetch it whole
+		if resp, ferr = c.Feeds.Get(ctx, url, ""); ferr != nil {
+			return old, nil
+		}
 	}
 	fresh, err := parse(resp.Body)
 	if err != nil {
@@ -138,7 +160,7 @@ func (c *Client) page(ctx context.Context, url, name string, maxAge time.Duratio
 		}
 		return cached{}, err
 	}
-	fresh.Fetched, fresh.ETag = c.Now(), resp.ETag
+	fresh.Version, fresh.Fetched, fresh.ETag = cacheVersion, c.Now(), resp.ETag
 	return fresh, c.save(file, fresh)
 }
 
@@ -215,6 +237,42 @@ func ParseCVEs(page []byte) []string {
 	}
 	slices.Sort(out)
 	return out
+}
+
+// ParseImpacts reads, per CVE, Apple's "Impact:" sentence from a security
+// note. Each entry is: component, "Available for: …", "Impact: …",
+// "Description: …", then one line per CVE ("CVE-2026-1234: credit").
+// CVEs named elsewhere (e.g. "Additional recognition") are ignored.
+func ParseImpacts(page []byte) map[string]string {
+	text := tagPattern.ReplaceAllString(string(page), "\n")
+	out := map[string]string{}
+	impact := ""
+	for _, line := range strings.Split(html.UnescapeString(text), "\n") {
+		line = strings.Join(strings.Fields(line), " ")
+		switch {
+		case strings.HasPrefix(line, "Available for:"):
+			impact = "" // a new entry
+		case strings.HasPrefix(line, "Impact:"):
+			impact = shorten(strings.TrimSpace(strings.TrimPrefix(line, "Impact:")), maxImpact)
+		case impact != "":
+			if id := cvePattern.FindString(line); id != "" && strings.HasPrefix(line, id) {
+				if _, ok := out[id]; !ok {
+					out[id] = impact
+				}
+			}
+		}
+	}
+	return out
+}
+
+// maxImpact bounds an impact sentence (it comes from outside).
+const maxImpact = 200
+
+func shorten(s string, n int) string {
+	if r := []rune(s); len(r) > n {
+		return string(r[:n-1]) + "…"
+	}
+	return s
 }
 
 func noteID(url string) string { return noteIDPattern.FindString(url) }

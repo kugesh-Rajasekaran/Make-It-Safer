@@ -6,6 +6,7 @@ package cvelist
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -34,6 +35,8 @@ type Record struct {
 	Title       string    `json:"title,omitempty"`
 	Description string    `json:"description,omitempty"` // shortened
 	Score       float64   `json:"score"`                 // highest CVSS base score from the CNA or CISA (0 = none)
+	Vector      string    `json:"vector,omitempty"`      // the CVSS vector of that score, e.g. CVSS:3.1/AV:N/…
+	Weakness    string    `json:"weakness,omitempty"`    // the first CWE, e.g. "CWE-364: Signal Handler Race Condition"
 	KEV         bool      `json:"kev,omitempty"`         // CISA marked it actively exploited
 	Products    []Product `json:"products,omitempty"`    // from the CNA and CISA (ADP)
 	Rejected    bool      `json:"rejected,omitempty"`
@@ -127,10 +130,12 @@ type recordJSON struct {
 			Descriptions []description  `json:"descriptions"`
 			Metrics      []metricSet    `json:"metrics"`
 			Affected     []affectedJSON `json:"affected"`
+			ProblemTypes []problemType  `json:"problemTypes"`
 		} `json:"cna"`
 		ADP []struct {
-			Metrics  []metricSet    `json:"metrics"`
-			Affected []affectedJSON `json:"affected"`
+			Metrics      []metricSet    `json:"metrics"`
+			Affected     []affectedJSON `json:"affected"`
+			ProblemTypes []problemType  `json:"problemTypes"`
 		} `json:"adp"`
 	} `json:"containers"`
 }
@@ -138,6 +143,13 @@ type recordJSON struct {
 type description struct {
 	Lang  string `json:"lang"`
 	Value string `json:"value"`
+}
+
+type problemType struct {
+	Descriptions []struct {
+		CWE         string `json:"cweId"`
+		Description string `json:"description"`
+	} `json:"descriptions"`
 }
 
 type affectedJSON struct {
@@ -171,11 +183,14 @@ func (r recordJSON) compact(now time.Time) *Record {
 	}
 	sets := r.Containers.CNA.Metrics
 	affected := r.Containers.CNA.Affected
+	problems := r.Containers.CNA.ProblemTypes
 	for _, adp := range r.Containers.ADP {
 		sets = append(sets, adp.Metrics...)
 		affected = append(affected, adp.Affected...)
+		problems = append(problems, adp.ProblemTypes...)
 	}
-	out.Score, out.KEV = maxScore(sets), kevListed(sets)
+	out.Score, out.Vector = maxScore(sets)
+	out.KEV, out.Weakness = kevListed(sets), firstWeakness(problems)
 	for _, a := range affected {
 		p := Product{Vendor: a.Vendor, Product: a.Product, Package: a.PackageName, CollectionURL: a.CollectionURL}
 		if len(p.Vendor) > maxProductText || len(p.Product) > maxProductText || len(p.Package) > maxProductText || len(p.CollectionURL) > maxProductText {
@@ -214,21 +229,50 @@ func kevListed(sets []metricSet) bool {
 	return false
 }
 
-// maxScore returns the highest CVSS base score (v4.0, v3.1, v3.0) found.
-func maxScore(sets []metricSet) float64 {
-	best := 0.0
+var (
+	vectorPattern = regexp.MustCompile(`^CVSS:[0-9.]+(/[A-Za-z]+:[A-Za-z])+$`)
+	cwePattern    = regexp.MustCompile(`^CWE-[0-9]{1,6}$`)
+)
+
+// maxScore returns the highest CVSS base score (v4.0, v3.1, v3.0) found,
+// with its vector ("" if the vector looks wrong). Ties keep the first, in a
+// fixed order, so the result doesn't change between runs.
+func maxScore(sets []metricSet) (float64, string) {
+	best, vector := 0.0, ""
 	for _, set := range sets {
-		for key, raw := range set {
+		for _, key := range slices.Sorted(maps.Keys(set)) {
 			if !strings.HasPrefix(key, "cvssV4") && !strings.HasPrefix(key, "cvssV3") {
 				continue
 			}
 			var m struct {
 				BaseScore float64 `json:"baseScore"`
+				Vector    string  `json:"vectorString"`
 			}
-			if json.Unmarshal(raw, &m) == nil && m.BaseScore > best && m.BaseScore <= 10 {
-				best = m.BaseScore
+			if json.Unmarshal(set[key], &m) == nil && m.BaseScore > best && m.BaseScore <= 10 {
+				best, vector = m.BaseScore, ""
+				if len(m.Vector) <= 200 && vectorPattern.MatchString(m.Vector) {
+					vector = m.Vector
+				}
 			}
 		}
 	}
-	return best
+	return best, vector
+}
+
+// firstWeakness returns the first CWE named in the record, with its name.
+func firstWeakness(problems []problemType) string {
+	for _, p := range problems {
+		for _, d := range p.Descriptions {
+			if !cwePattern.MatchString(d.CWE) {
+				continue
+			}
+			name := strings.TrimSpace(strings.TrimPrefix(d.Description, d.CWE))
+			name = strings.TrimSpace(strings.TrimLeft(name, ":"))
+			if name == "" {
+				return d.CWE
+			}
+			return shorten(d.CWE+": "+name, 120)
+		}
+	}
+	return ""
 }
