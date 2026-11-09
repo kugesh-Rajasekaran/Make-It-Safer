@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -148,9 +149,9 @@ func Settings() []Setting {
 		check("full_check", "", "Check everything again, incl. "+strings.ToLower(LocalLabel()[:1])+LocalLabel()[1:],
 			func(c *Config) *Duration { return &c.Schedule.FullCheck }),
 		check("servers", "", "Read your servers' installed packages", func(c *Config) *Duration { return &c.Schedule.Servers }),
-		list("rules.ignore.packages", "Ignore", "Never alert for these packages", "Packages, separated by commas (empty for none)", false,
+		list("rules.ignore.packages", "Ignore", "Never alert for these packages", "Packages, separated by commas (type none to clear the list)", false,
 			func(c *Config) *[]string { return &r(c).Ignore.Packages }),
-		list("rules.ignore.cves", "", "Never alert for these CVEs", "CVE IDs, separated by commas (empty for none)", true,
+		list("rules.ignore.cves", "", "Never alert for these CVEs", "CVE IDs, separated by commas (type none to clear the list)", true,
 			func(c *Config) *[]string { return &r(c).Ignore.CVEs }),
 		{Key: "terminal.app", Group: "Notifications", Label: "Terminal for fix sessions", Kind: KindChoice,
 			Choices: terminalChoices(),
@@ -163,7 +164,7 @@ func Settings() []Setting {
 			},
 			set: func(c *Config, v string) error { c.Terminal.App = v; return nil }},
 		{Key: "terminal.command", Label: "Custom terminal command", Hidden: true,
-			Question: "Command that opens a script, with {script} (e.g. foot {script})",
+			Question: "Command that opens a script, with {script} (e.g. foot {script}). Separate parts with spaces; quotes are not understood",
 			value:    func(c *Config) string { return c.Terminal.Command },
 			set:      func(c *Config, v string) error { c.Terminal.Command = v; return nil }},
 		toggle("notifications.sound", "Play a sound with alerts", func(c *Config) *bool { return &c.Notifications.Sound }),
@@ -234,10 +235,19 @@ func list(key, group, label, question string, upper bool, field func(*Config) *[
 			items := []string{}
 			for _, item := range strings.Split(v, ",") {
 				if item = strings.TrimSpace(item); item != "" {
-					if upper {
-						item = strings.ToUpper(item)
-					}
 					items = append(items, item)
+				}
+			}
+			// "none" empties the list; it is never an item (there is no package called none).
+			if i := slices.IndexFunc(items, func(item string) bool { return strings.EqualFold(item, "none") }); i >= 0 {
+				if len(items) > 1 {
+					return fmt.Errorf(`"none" empties the list; don't combine it with other items`)
+				}
+				items = items[:0]
+			}
+			if upper {
+				for i := range items {
+					items[i] = strings.ToUpper(items[i])
 				}
 			}
 			*field(c) = items

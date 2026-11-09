@@ -134,7 +134,8 @@ func TestDurations(t *testing.T) {
 			t.Errorf("FormatDuration(%v) = %q, want %q", got, FormatDuration(got), in)
 		}
 	}
-	for _, bad := range []string{"xd", "-1d", "soon"} {
+	// Too many days would wrap around int64 nanoseconds into a short or negative interval.
+	for _, bad := range []string{"xd", "-1d", "soon", "187649984473771d", "106752d", "9223372036854775807d"} {
 		if _, err := ParseDuration(bad); err == nil {
 			t.Errorf("ParseDuration(%q) succeeded", bad)
 		}
@@ -241,5 +242,19 @@ func writePrivate(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestListStaleAfter(t *testing.T) {
+	for _, tc := range []struct{ every, want time.Duration }{
+		{0, 24 * time.Hour}, // not set
+		{time.Hour, 24 * time.Hour},
+		{12 * time.Hour, 24 * time.Hour}, // the default: one missed refresh
+		{48 * time.Hour, 96 * time.Hour},
+		{7 * 24 * time.Hour, 14 * 24 * time.Hour},
+	} {
+		if got := (Schedule{Servers: Duration(tc.every)}).ListStaleAfter(); got != tc.want {
+			t.Errorf("servers every %s: stale after %s, want %s", tc.every, got, tc.want)
+		}
 	}
 }
