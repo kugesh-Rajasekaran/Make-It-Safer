@@ -92,7 +92,11 @@ type Finding struct {
 	Installed      string    `json:"installed,omitempty"`
 	Fixed          string    `json:"fixed,omitempty"` // "" while there's no fix
 	ProOnly        bool      `json:"pro_only,omitempty"`
-	Summary        string    `json:"summary,omitempty"` // from the data source; display only
+	Summary        string    `json:"summary,omitempty"`  // from the data source; display only
+	Vector         string    `json:"vector,omitempty"`   // CVSS vector from the CVE record; display only
+	Weakness       string    `json:"weakness,omitempty"` // e.g. "CWE-364: Signal Handler Race Condition"
+	Impact         string    `json:"impact,omitempty"`   // what an attacker could do, in Apple's or CISA's words
+	Details        string    `json:"details,omitempty"`  // the CVE record's description
 	DistroPriority string    `json:"distro_priority,omitempty"`
 	Score          float64   `json:"score,omitempty"` // CVSS base score, 0 = unknown
 	EPSS           float64   `json:"epss,omitempty"`

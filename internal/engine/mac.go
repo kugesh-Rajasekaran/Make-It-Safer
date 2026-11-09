@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"strings"
@@ -40,11 +41,11 @@ func (e *Engine) macFindings(ctx context.Context, server string, inv *inventory.
 				(product == apple.MacOS && apple.Major(r.Version) != apple.Major(installed)) {
 				continue
 			}
-			cves, err := e.Apple.CVEs(ctx, r)
+			note, err := e.Apple.Note(ctx, r)
 			if err != nil {
 				return nil, err
 			}
-			for _, cve := range cves {
+			for _, cve := range note.CVEs {
 				id := findings.MakeID(server, findings.KindVulnerability, cve+"/"+strings.ToLower(product))
 				if seen[id] || !cvePattern.MatchString(cve) {
 					continue
@@ -54,6 +55,7 @@ func (e *Engine) macFindings(ctx context.Context, server string, inv *inventory.
 					ID: id, Server: server, Kind: findings.KindVulnerability, CVE: cve, VulnID: r.Name,
 					Source: strings.ToLower(product), Installed: installed, Fixed: u.Version,
 					Summary: "Fixed in " + r.Name + " (Apple security note " + r.URL + ")", KEV: catalog.Has(cve),
+					Impact: cmp.Or(note.Impacts[cve], catalog.Description(cve)),
 				})
 			}
 		}

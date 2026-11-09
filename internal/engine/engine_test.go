@@ -114,7 +114,7 @@ func (d *fakeData) handler(t *testing.T) http.Handler {
 		if d.kev {
 			id = "CVE-2024-6387"
 		}
-		_, _ = io.WriteString(w, `{"catalogVersion":"1","vulnerabilities":[{"cveID":"`+id+`"}]}`)
+		_, _ = io.WriteString(w, `{"catalogVersion":"1","vulnerabilities":[{"cveID":"`+id+`","shortDescription":"OpenSSH lets remote attackers run code."}]}`)
 	})
 	mux.HandleFunc("GET /epss", func(w http.ResponseWriter, _ *http.Request) {
 		d.mu.Lock()
@@ -211,6 +211,11 @@ func TestMatchFindsFixesAndResolves(t *testing.T) {
 	if v == nil || v.Fixed != "1:9.6p1-3ubuntu13.8" || v.Score != 8.1 || v.Priority != findings.High || v.ProOnly {
 		t.Fatalf("vulnerability finding = %+v", v)
 	}
+	// The CVE record's facts are kept, so the risk can be put into words.
+	if v.Vector != "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H" || v.Weakness != "CWE-364: Signal Handler Race Condition" ||
+		!strings.HasPrefix(v.Details, "A security regression") || v.Impact != "" {
+		t.Fatalf("facts: vector %q, weakness %q, details %q, impact %q", v.Vector, v.Weakness, v.Details, v.Impact)
+	}
 	if r := st.Find("web/reboot/kernel"); r == nil || !strings.Contains(r.Summary, "6.8.0-51") {
 		t.Fatalf("reboot finding = %+v", r)
 	}
@@ -224,6 +229,9 @@ func TestMatchFindsFixesAndResolves(t *testing.T) {
 	res, _ = e.Match(context.Background(), []config.Server{web})
 	if len(res.Changes.Escalated) != 1 || res.Changes.Escalated[0].Priority != findings.Urgent {
 		t.Fatalf("escalation = %+v", res.Changes)
+	}
+	if got := res.Changes.Escalated[0].Impact; got != "OpenSSH lets remote attackers run code." {
+		t.Fatalf("CISA's description = %q", got)
 	}
 
 	// The server is patched and rebooted.

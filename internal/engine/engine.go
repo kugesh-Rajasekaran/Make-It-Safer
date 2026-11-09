@@ -4,13 +4,10 @@ package engine
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"log/slog"
 	"regexp"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/apperr"
@@ -273,80 +270,6 @@ func (e *Engine) fetchVulns(ctx context.Context, refs [][]osv.Ref) (map[string]*
 	return out, firstErr
 }
 
-// enrich adds CVSS scores and EPSS for findings that can alert: those with
-// a fix, or all of them when rules.unfixed is "all". When a lookup fails, a
-// finding keeps the score it had in previous: storing 0 instead would lower
-// its priority, and when the source answered again the rise would count as an
-// escalation and bring back findings you had accepted or snoozed. It returns
-// warnings for the lookups that failed.
-func (e *Engine) enrich(ctx context.Context, all []*findings.Finding, previous *findings.Store) []string {
-	need := map[string][]*findings.Finding{}
-	for _, f := range all {
-		if f.Kind == findings.KindVulnerability && f.CVE != "" && (f.HasFix() || e.Rules.Unfixed == config.UnfixedAll) {
-			need[f.CVE] = append(need[f.CVE], f)
-		}
-	}
-	if len(need) == 0 {
-		return nil
-	}
-	var warnings []string
-	cves := make([]string, 0, len(need))
-	for cve := range need {
-		cves = append(cves, cve)
-	}
-	if scores, err := e.EPSS.Scores(ctx, cves); err != nil {
-		e.Log.Warn("epss", "status", "error", "error", err)
-		warnings = append(warnings, "EPSS unavailable, using the last known scores: "+apperr.MessageOf(err))
-		for _, fs := range need {
-			for _, f := range fs {
-				if old := previous.Find(f.ID); old != nil {
-					f.EPSS = old.EPSS
-				}
-			}
-		}
-	} else {
-		for cve, s := range scores {
-			for _, f := range need[cve] {
-				f.EPSS = s
-			}
-		}
-	}
-
-	var (
-		wg     sync.WaitGroup
-		failed atomic.Int32 // records that could not be read, not counting CVEs the CVE List doesn't have
-		slots  = make(chan struct{}, 8)
-	)
-	for cve, fs := range need {
-		wg.Add(1)
-		slots <- struct{}{}
-		go func() {
-			defer func() { <-slots; wg.Done() }()
-			r, err := e.CVE.Get(ctx, cve)
-			if err != nil {
-				e.Log.Debug("cve record", "status", "error", "cve", cve, "error", err)
-				if !errors.Is(err, feeds.ErrNotFound) {
-					failed.Add(1)
-				}
-				for _, f := range fs {
-					if old := previous.Find(f.ID); old != nil {
-						f.Score = old.Score
-					}
-				}
-				return
-			}
-			for _, f := range fs { // each finding belongs to exactly one CVE
-				f.Score = r.Score
-			}
-		}()
-	}
-	wg.Wait()
-	if n := failed.Load(); n > 0 {
-		warnings = append(warnings, fmt.Sprintf("%d CVE records unavailable, using the last known scores", n))
-	}
-	return warnings
-}
-
 // vulnFindings turns one server's OSV matches into findings, one per CVE
 // and source package. The standard ecosystem wins over Ubuntu Pro, which
 // only adds a fix when the standard archive has none.
@@ -371,7 +294,7 @@ func vulnFindings(w *serverWork, refs [][]osv.Ref, vulns map[string]*osv.Vuln, c
 				ID: id, Server: w.server.Name, Kind: findings.KindVulnerability,
 				CVE: v.CVE(), VulnID: v.ID, Source: q.Name, Installed: q.Version,
 				Fixed: fixed, ProOnly: proOnly, Summary: shorten(v.Summary, 200),
-				DistroPriority: v.DistroPriority(q.Ecosystem, q.Name), KEV: catalog.Has(v.CVE()),
+				DistroPriority: v.DistroPriority(q.Ecosystem, q.Name), KEV: catalog.Has(v.CVE()), Impact: catalog.Description(v.CVE()),
 			}
 			order = append(order, id)
 		}
