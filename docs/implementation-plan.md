@@ -100,6 +100,7 @@ For every server you own, always know which vulnerabilities affect it, and be on
 | M8 | Auto-unlock (macOS) | M | restart your Mac and never type the passphrase | ✅ Built · tested on your Mac |
 | M9 | Settings screen | S | change alert scores, reminders and the terminal with `mis config` | ✅ Built · tested in a real terminal |
 | M10 | This computer | L | have the Mac (or Linux desktop) `mis` runs on checked too, from `mis init` | ✅ Built · Mac tested on your Mac; Linux desktop by tests only |
+| M11 | One-line install | S | install or update with one `curl` command, no Go needed | ✅ Built · first release pending |
 
 ### M0 · Foundations (S)
 Goal: an empty but solid project.
@@ -252,7 +253,7 @@ Goal: design §4.10, [ADR 0003](adr/0003-this-computer.md). Branch: `feat/this-c
 |---|---|---|
 | T-1000 | `fix(daemon)` schedule by wall-clock time so overdue jobs run right after wake-up | Test fails without the fix (monotonic reading) |
 | T-1001 | `feat(local)` read this computer: the collector on Linux; `sw_vers`, Safari, `softwareupdate --list`, `brew outdated` on a Mac; any failure fails the whole read 🔒 | Parser tests; real run on your Mac |
-| T-1002 | `feat(apple)` Apple security notes: index and release pages, strict HTML parsing, cache with ETags, stale copy when down; `support.apple.com` allowlisted 🔒 | Tests on saved pages |
+| T-1002 | `feat(apple)` Apple security notes: index and release pages, strict HTML parsing, cache with ETags, stale copy when down; `support.apple.com` allowlisted 🔒 | Tests on hand-written pages shaped like Apple's |
 | T-1003 | `feat(engine)` this computer as a server without SSH: Linux via OSV; Mac via Apple's notes (CVEs of releases between installed and offered), end of life, Homebrew | Fake-server tests: findings, priorities, resolve after update, Apple down keeps findings |
 | T-1004 | `feat(daemon)` checked on every match without the key; one notification per Apple update with a "This Mac" button opening Software Update; follow-ups without the key | Notification tests |
 | T-1005 | `feat(cli)` `mis init` asks "Check this Mac too?"; `this_computer` in `mis config`; `check/status/doctor/fix` include it | Tried on your Mac |
@@ -262,6 +263,17 @@ Built and tested on your Mac: `mis check` read macOS 15.7.7, Safari 26.6.1, 3 Ap
 **You check:** run `mis config`, turn on "Also check this Mac", run `mis check this-mac`, then click a "This Mac" notification button.
 
 ---
+
+### M11 · One-line install (S)
+Goal: install without Go or a clone. Branch: `feat/release-install`.
+
+| ID | Task | Done when |
+|---|---|---|
+| T-1100 | `ci(release)` on a `v*` tag: build macOS arm64/amd64 (cgo, ad-hoc signed, universal helper) and Linux amd64/arm64; publish archives and `checksums.txt` as a GitHub Release; hyphenated tags are pre-releases | First tag builds and publishes |
+| T-1101 | `feat(install)` `install.sh`: detect OS and processor, download the release, verify SHA-256, install `mis` (and the helper on a Mac) without sudo, restart an installed service 🔒 | Tried on your Mac with a local release; a tampered archive is refused |
+| T-1102 | `docs` README: benefits first, one-line install, agent prompt, notification-to-fix flow, encryption explained, data sources | Reviewed by you |
+
+**You check:** after the first tag, run the `curl` command from the README on your Mac.
 
 ## 5. Spikes (verify early)
 

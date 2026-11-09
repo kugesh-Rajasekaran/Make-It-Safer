@@ -11,7 +11,7 @@ Standards are adapted from the DineSynk repo (working style, engineering princip
 - **Language:** Go (single binary), plus a small Swift helper app for macOS notifications
 - **Runs on:** the user's computer (macOS first, then Linux desktop)
 - **Servers supported (v1):** Ubuntu, Debian
-- **Audience (v1):** personal use, installed from source
+- **Audience (v1):** personal use, installed with `install.sh` (GitHub Releases) or from source
 - **Vulnerability data:** OSV.dev (confirmed), CVE List (early warning), CISA KEV, EPSS, endoflife.date
 - **Status:** milestones M0–M7 built. What's left is checking on the user's own Mac, Linux desktop and servers (spikes S2, S3 and the acceptance checklist in the plan).
 
