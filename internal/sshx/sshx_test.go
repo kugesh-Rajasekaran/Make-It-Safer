@@ -26,6 +26,8 @@ type testServer struct {
 	allowPTY      bool
 	allowForward  bool
 	offerPassword bool
+	exitStatus    uint32 // exit code the collector reports
+	noExitStatus  bool   // close the channel without any exit status, like a dropped connection
 }
 
 func newSigner(t *testing.T) ssh.Signer {
@@ -130,7 +132,9 @@ func (srv *testServer) session(ch ssh.Channel, reqs <-chan *ssh.Request) {
 		case "exec": // like ForceCommand: whatever was asked, run the collector
 			_ = req.Reply(true, nil)
 			_, _ = ch.Write(srv.output)
-			_, _ = ch.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{0}))
+			if !srv.noExitStatus {
+				_, _ = ch.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{srv.exitStatus}))
+			}
 			return
 		default:
 			_ = req.Reply(false, nil)
@@ -223,6 +227,30 @@ func TestOutputIsCapped(t *testing.T) {
 	defer c.Close()
 	if _, err := c.Collect(context.Background()); !apperr.Is(err, apperr.InventoryTooLarge) {
 		t.Fatalf("Collect() = %v, want %s", err, apperr.InventoryTooLarge)
+	}
+}
+
+// A run that ends without a clean exit may have been cut off mid-list, so
+// its output must never be handed on as a complete inventory.
+func TestCollectFailsOnUncleanExit(t *testing.T) {
+	cases := map[string]func(*testServer){
+		"closed without an exit status": func(s *testServer) { s.noExitStatus = true },
+		"non-zero exit status":          func(s *testServer) { s.exitStatus = 1 },
+	}
+	for name, configure := range cases {
+		t.Run(name, func(t *testing.T) {
+			client := newSigner(t)
+			srv := startServer(t, client, configure)
+			c, err := Dial(context.Background(), srv.target, pinned(t, srv, srv.hostKey), client)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer c.Close()
+			out, err := c.Collect(context.Background())
+			if !apperr.Is(err, apperr.ServerCommandFailed) {
+				t.Fatalf("Collect() = %q, %v; want %s", out, err, apperr.ServerCommandFailed)
+			}
+		})
 	}
 }
 

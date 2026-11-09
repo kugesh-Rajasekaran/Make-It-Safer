@@ -5,8 +5,10 @@
 #   - no password, key login only, no sudo, no groups
 #   - home owned by root, so it can't add keys or files
 #   - sshd forces the collector: no shell, no terminal, no forwarding
-# Safe to run again. If any check fails, every change is rolled back and
-# other users' SSH settings are verified to be unchanged.
+# Safe to run again. If a check fails, or the session drops or is stopped
+# (HUP, INT, TERM), the changes made by this run are rolled back. On a repeat
+# run the user already exists and is kept; the key, collector and sshd
+# settings are rewritten with the same values.
 set -eu
 umask 022
 
@@ -30,6 +32,49 @@ Match User mis
 
 say() { printf 'mis-setup: %s\n' "$*"; }
 fail() { printf 'mis-setup: ERROR: %s\n' "$*" >&2; exit 1; }
+
+# matches WORD "PATTERNS": does one of the space-separated patterns match
+# WORD? sshd's Allow*/Deny* lists understand only * and ?; a "!" is an
+# ordinary character there, not a negation. In a user@host pattern only the
+# user part is compared. The unquoted patterns are meant to be split and to glob.
+# shellcheck disable=SC2086,SC2254
+matches() {
+    m_word=$1
+    m_found=1
+    set -f # keep * and ? from expanding to file names
+    for m_pat in $2; do
+        m_pat=${m_pat%%@*}
+        case $m_word in $m_pat) m_found=0; break ;; esac
+    done
+    set +f
+    return $m_found
+}
+
+# check_access: sshd's login rules for the mis user, read from MIS_SETTINGS
+# (the "sshd -T" lines for mis) and MIS_GROUPS. As in sshd, a matching Deny*
+# entry blocks the login, and an Allow* list that is set must have a match.
+check_access() {
+    ca_allow_users=$(printf '%s\n' "$MIS_SETTINGS" | sed -n 's/^allowusers //p')
+    ca_deny_users=$(printf '%s\n' "$MIS_SETTINGS" | sed -n 's/^denyusers //p')
+    ca_allow_groups=$(printf '%s\n' "$MIS_SETTINGS" | sed -n 's/^allowgroups //p')
+    ca_deny_groups=$(printf '%s\n' "$MIS_SETTINGS" | sed -n 's/^denygroups //p')
+    if [ -n "$ca_allow_users" ] && ! matches "$MIS_USER" "$ca_allow_users"; then
+        fail "your sshd AllowUsers setting doesn't include '$MIS_USER'; add it and run this again"
+    fi
+    if [ -n "$ca_deny_users" ] && matches "$MIS_USER" "$ca_deny_users"; then
+        fail "your sshd DenyUsers setting blocks '$MIS_USER'"
+    fi
+    ca_ok=no
+    for ca_group in $MIS_GROUPS; do
+        if [ -n "$ca_deny_groups" ] && matches "$ca_group" "$ca_deny_groups"; then
+            fail "your sshd DenyGroups setting blocks the '$ca_group' group of '$MIS_USER'"
+        fi
+        if matches "$ca_group" "$ca_allow_groups"; then ca_ok=yes; fi
+    done
+    if [ -n "$ca_allow_groups" ] && [ "$ca_ok" = no ]; then
+        fail "your sshd AllowGroups setting doesn't include the '$MIS_USER' group; add it and run this again"
+    fi
+}
 
 [ "$(id -u)" -eq 0 ] || fail "must run as root"
 grep -Eq '^ID="?(ubuntu|debian)"?$' /etc/os-release || fail "only Ubuntu and Debian are supported"
@@ -62,6 +107,8 @@ CREATED_USER=no
 DROPIN_STATE=none   # none | new | replaced
 MAIN_BACKUP=""
 rollback() {
+    set +e # keep undoing even if a step fails or the terminal is gone
+    trap '' HUP INT TERM PIPE
     say "something went wrong; undoing the changes"
     case $DROPIN_STATE in
         new) rm -f "$DROPIN" ;;
@@ -78,6 +125,9 @@ on_exit() {
     status=$?
     if [ "$status" -ne 0 ]; then rollback; fi
 }
+# dash runs the EXIT trap on exit and INT but not when HUP or TERM kill it,
+# so turn those signals into a normal exit.
+trap 'exit 1' HUP INT TERM
 trap on_exit EXIT
 
 # 1. The user: no password, no groups, home owned by root.
@@ -106,8 +156,8 @@ if grep -Eqi '^[[:space:]]*Include[[:space:]]+/etc/ssh/sshd_config\.d/\*\.conf' 
     chmod 0644 "$DROPIN.new"
     mv -f "$DROPIN.new" "$DROPIN"
 else
-    MAIN_BACKUP=$MAIN.mis-bak
-    cp -p "$MAIN" "$MAIN_BACKUP"
+    cp -p "$MAIN" "$MAIN.mis-bak" || { rm -f "$MAIN.mis-bak"; fail "cannot back up $MAIN"; }
+    MAIN_BACKUP=$MAIN.mis-bak # set only once the copy is complete, so a rollback never restores a partial file
     sed -i '/^# BEGIN make-it-safer$/,/^# END make-it-safer$/d' "$MAIN"
     printf '\n# BEGIN make-it-safer\n%s\n# END make-it-safer\n' "$BLOCK" >> "$MAIN"
 fi
@@ -122,15 +172,10 @@ MIS_SETTINGS=$(probe "$MIS_USER")
 for want in "forcecommand $COLLECT" "authenticationmethods publickey" "disableforwarding yes" "permittty no" "permituserrc no"; do
     printf '%s\n' "$MIS_SETTINGS" | grep -qix "$want" || fail "sshd does not apply '$want' to the $MIS_USER user"
 done
-ALLOW=$(printf '%s\n' "$MIS_SETTINGS" | sed -n 's/^allowusers //p')
-if [ -n "$ALLOW" ] && ! printf '%s\n' "$ALLOW" | grep -qw "$MIS_USER"; then
-    fail "your sshd AllowUsers setting doesn't include '$MIS_USER'; add it and run this again"
-fi
-if printf '%s\n' "$MIS_SETTINGS" | sed -n 's/^denyusers //p' | grep -qw "$MIS_USER"; then
-    fail "your sshd DenyUsers setting blocks '$MIS_USER'"
-fi
+MIS_GROUPS=$(id -Gn "$MIS_USER")
+check_access
 
 reload_sshd
-trap - EXIT
+trap - EXIT HUP INT TERM
 rm -f "$DROPIN.mis-bak" "${MAIN_BACKUP:-/nonexistent}"
 say "done: the '$MIS_USER' user can only run the read-only collector"

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"strings"
 	"time"
 
@@ -102,8 +103,14 @@ func (c *Client) Run(ctx context.Context, cmd string) ([]byte, error) {
 	if len(data) > MaxOutput {
 		return nil, apperr.New(apperr.InventoryTooLarge, c.target.Name+" sent more output than allowed")
 	}
-	if err := s.Wait(); err != nil && ctx.Err() != nil {
-		return nil, apperr.Wrap(apperr.ServerCommandFailed, ctx.Err(), "the collector on "+c.target.Name+" timed out")
+	// A run that ends without a clean exit (dropped connection, non-zero or
+	// signalled exit) may have been cut off mid-list; the output has no end
+	// marker, so a truncated list must never be mistaken for a full one.
+	if err := s.Wait(); err != nil {
+		if ctx.Err() != nil {
+			return nil, apperr.Wrap(apperr.ServerCommandFailed, ctx.Err(), "the collector on "+c.target.Name+" timed out")
+		}
+		return nil, apperr.Wrap(apperr.ServerCommandFailed, err, "the collector on "+c.target.Name+" did not finish cleanly")
 	}
 	return data, nil
 }
@@ -169,6 +176,8 @@ func PasswordOffered(ctx context.Context, t Target, hk HostKeys) (bool, error) {
 		return false, err
 	}
 	defer func() { _ = conn.Close() }()
+	stop := bound(ctx, conn)
+	defer stop()
 	c, _, _, err := ssh.NewClientConn(conn, t.Addr(), conf)
 	if err == nil { // logged in without any credentials: worst case
 		_ = c.Close()
@@ -177,6 +186,10 @@ func PasswordOffered(ctx context.Context, t Target, hk HostKeys) (bool, error) {
 	var e *apperr.Error
 	if errors.As(err, &e) {
 		return false, e
+	}
+	var ne net.Error
+	if ctx.Err() != nil || (errors.As(err, &ne) && ne.Timeout()) { // no answer is not "no password offered"
+		return false, apperr.Wrap(apperr.ServerUnreachable, err, "no answer from "+t.Name+" ("+t.Addr()+")")
 	}
 	return offered, nil
 }

@@ -107,8 +107,11 @@ func TestSetupRefusesAndRollsBack(t *testing.T) {
 		prepare string // run as root before setup
 		message string
 	}{
-		"someone else's mis user": {"useradd mis", "already exists"},
-		"AllowUsers excludes mis": {"echo 'AllowUsers admin' >> /etc/ssh/sshd_config", "AllowUsers"},
+		"someone else's mis user":  {"useradd mis", "already exists"},
+		"AllowUsers excludes mis":  {"echo 'AllowUsers admin' >> /etc/ssh/sshd_config", "AllowUsers"},
+		"AllowUsers lookalike":     {"echo 'AllowUsers admin mis-admin' >> /etc/ssh/sshd_config", "AllowUsers"},
+		"AllowGroups excludes mis": {"echo 'AllowGroups wheel' >> /etc/ssh/sshd_config", "AllowGroups"},
+		"DenyGroups blocks mis":    {"echo 'DenyGroups mi*' >> /etc/ssh/sshd_config", "DenyGroups"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
