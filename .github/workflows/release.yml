@@ -1,0 +1,87 @@
+name: release
+
+# Pushing a tag like v0.1.0 builds mis for macOS and Linux and publishes a
+# GitHub Release with the archives and checksums.txt. install.sh downloads
+# from there. A tag with a hyphen (v0.2.0-rc1) becomes a pre-release.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    env:
+      TAG: ${{ github.ref_name }}
+      ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build
+        run: CGO_ENABLED=0 GOOS=linux GOARCH="$ARCH" make build VERSION="$TAG"
+      - name: Package
+        run: |
+          mkdir -p stage dist
+          cp bin/mis LICENSE README.md stage/
+          tar -czf "dist/mis_linux_${ARCH}.tar.gz" -C stage .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: dist/*.tar.gz
+
+  macos:
+    runs-on: macos-latest
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build the notification helper (Apple Silicon + Intel)
+        run: UNIVERSAL=1 ./macos/build.sh
+      - name: Build and package
+        run: |
+          mkdir -p dist
+          for arch in arm64 amd64; do
+            CGO_ENABLED=1 GOOS=darwin GOARCH="$arch" make build VERSION="$TAG"
+            codesign --force --sign - bin/mis
+            rm -rf stage && mkdir stage
+            cp bin/mis LICENSE README.md stage/
+            cp -R "macos/build/Make-It-Safer Notifier.app" stage/
+            tar -czf "dist/mis_darwin_${arch}.tar.gz" -C stage .
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: darwin
+          path: dist/*.tar.gz
+
+  publish:
+    needs: [linux, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: cd dist && sha256sum *.tar.gz > checksums.txt && cat checksums.txt
+      - name: Publish the release
+        run: |
+          pre=""
+          case "$TAG" in *-*) pre="--prerelease" ;; esac
+          gh release create "$TAG" dist/* --repo "$REPO" --title "$TAG" --generate-notes $pre
