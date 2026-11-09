@@ -6,6 +6,7 @@
 package apple
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -89,13 +90,26 @@ func (c *Client) CVEs(ctx context.Context, r Release) ([]string, error) {
 		url = strings.Replace(url, "https://support.apple.com", c.Base, 1)
 	}
 	page, err := c.page(ctx, url, "note-"+noteID(r.URL), noteMaxAge, func(body []byte) (cached, error) {
-		return cached{CVEs: ParseCVEs(body)}, nil
+		cves := ParseCVEs(body)
+		// A page that lists no CVEs and doesn't say so is an error page or a
+		// changed layout. Caching it would read as "fixes nothing" and
+		// resolve the Mac's findings.
+		if len(cves) == 0 && !bytes.Contains(body, []byte(noCVEsText)) {
+			return cached{}, apperr.New(apperr.FeedsInvalidData, "Apple's security note for "+r.Name+" listed no CVEs; its layout may have changed")
+		}
+		return cached{CVEs: cves}, nil
 	})
 	return page.CVEs, err
 }
 
+// noCVEsText is what Apple's pages say when a release fixes no CVEs.
+const noCVEsText = "no published CVE entries"
+
 // page returns a cached page, fetching it again when it's older than maxAge.
-// If the fetch fails, a stale copy is still used.
+// If the fetch fails, a stale copy is still used. If the page arrives but
+// can't be read, the stale copy is returned together with the error, so the
+// check reports that Apple's layout changed instead of quietly going on with
+// old data.
 func (c *Client) page(ctx context.Context, url, name string, maxAge time.Duration, parse func([]byte) (cached, error)) (cached, error) {
 	file := filepath.Join(c.Cache, name+".json")
 	var old cached
@@ -120,7 +134,7 @@ func (c *Client) page(ctx context.Context, url, name string, maxAge time.Duratio
 	fresh, err := parse(resp.Body)
 	if err != nil {
 		if haveOld {
-			return old, nil
+			return old, err
 		}
 		return cached{}, err
 	}

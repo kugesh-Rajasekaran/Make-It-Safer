@@ -5,11 +5,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/kugesh-rajasekaran/make-it-safer/internal/apperr"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/feeds"
 )
 
@@ -124,5 +126,112 @@ func TestClientCachesAndFallsBack(t *testing.T) {
 	empty := &Client{Feeds: feeds.NewForTest(srv.URL), IndexURL: srv.URL + "/index", Cache: t.TempDir(), Now: time.Now}
 	if _, err := empty.Releases(ctx); err == nil {
 		t.Fatal("no copy and Apple down: want an error, not an empty list")
+	}
+}
+
+// pageServer answers every request with whatever body currently holds.
+type pageServer struct {
+	*httptest.Server
+	body atomic.Value // string
+}
+
+func newPageServer(t *testing.T, body string) *pageServer {
+	t.Helper()
+	p := &pageServer{}
+	p.body.Store(body)
+	p.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(p.body.Load().(string)))
+	}))
+	t.Cleanup(p.Close)
+	return p
+}
+
+func cacheFiles(t *testing.T, dir string) map[string]string {
+	t.Helper()
+	files := map[string]string{}
+	entries, err := os.ReadDir(dir)
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[e.Name()] = string(data)
+	}
+	return files
+}
+
+// A page that lists no CVEs and doesn't say so is an error page or a changed
+// layout. It must not be taken for "this release fixes nothing".
+func TestNoteWithoutCVEs(t *testing.T) {
+	note, _ := os.ReadFile("testdata/note.html")
+	const errorPage = "<html>Service unavailable</html>"
+	now := time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)
+	ctx := context.Background()
+
+	t.Run("nothing cached", func(t *testing.T) {
+		srv := newPageServer(t, errorPage)
+		r := Release{Name: "macOS Sequoia 15.8.2", Product: MacOS, Version: "15.8.2", URL: srv.URL + "/en-us/149523"}
+		c := &Client{Feeds: feeds.NewForTest(srv.URL), IndexURL: srv.URL, Cache: t.TempDir(), Now: func() time.Time { return now }}
+		if cves, err := c.CVEs(ctx, r); !apperr.Is(err, apperr.FeedsInvalidData) {
+			t.Fatalf("CVEs() = %v, %v; want %s", cves, err, apperr.FeedsInvalidData)
+		}
+		if files := cacheFiles(t, c.Cache); len(files) != 0 {
+			t.Fatalf("the error page was cached: %v", files)
+		}
+	})
+
+	t.Run("stale copy is kept", func(t *testing.T) {
+		now := now
+		srv := newPageServer(t, string(note))
+		r := Release{Name: "macOS Sequoia 15.8.2", Product: MacOS, Version: "15.8.2", URL: srv.URL + "/en-us/149523"}
+		c := &Client{Feeds: feeds.NewForTest(srv.URL), IndexURL: srv.URL, Cache: t.TempDir(), Now: func() time.Time { return now }}
+		if cves, err := c.CVEs(ctx, r); err != nil || len(cves) != 6 {
+			t.Fatalf("first read: %v, %v", cves, err)
+		}
+		before := cacheFiles(t, c.Cache)
+
+		now = now.Add(8 * 24 * time.Hour) // the copy is stale, and the page now fails
+		srv.body.Store(errorPage)
+		cves, err := c.CVEs(ctx, r)
+		if err == nil {
+			t.Fatal("the unreadable page was not reported")
+		}
+		if len(cves) != 6 {
+			t.Fatalf("the saved CVEs were lost: %v", cves)
+		}
+		if after := cacheFiles(t, c.Cache); !reflect.DeepEqual(before, after) {
+			t.Fatal("the cached note was overwritten")
+		}
+	})
+
+	t.Run("a note that says it has no CVEs is fine", func(t *testing.T) {
+		srv := newPageServer(t, "<html><p>This update has no published CVE entries.</p></html>")
+		r := Release{Name: "macOS Sequoia 15.8.2", Product: MacOS, Version: "15.8.2", URL: srv.URL + "/en-us/149523"}
+		c := &Client{Feeds: feeds.NewForTest(srv.URL), IndexURL: srv.URL, Cache: t.TempDir(), Now: func() time.Time { return now }}
+		if cves, err := c.CVEs(ctx, r); err != nil || len(cves) != 0 {
+			t.Fatalf("CVEs() = %v, %v", cves, err)
+		}
+	})
+}
+
+// When the index page arrives but has no releases (Apple changed its
+// layout), the check reports it instead of going on with the old list.
+func TestIndexLayoutChangeIsReportedWithOldCopy(t *testing.T) {
+	index, _ := os.ReadFile("testdata/index.html")
+	srv := newPageServer(t, string(index))
+	now := time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)
+	c := &Client{Feeds: feeds.NewForTest(srv.URL), IndexURL: srv.URL, Cache: t.TempDir(), Now: func() time.Time { return now }}
+	ctx := context.Background()
+	if rs, err := c.Releases(ctx); err != nil || len(rs) != 9 {
+		t.Fatalf("first read: %d, %v", len(rs), err)
+	}
+
+	now = now.Add(7 * time.Hour)
+	srv.body.Store("<html><table><tr><td>redesigned</td></tr></table></html>")
+	if _, err := c.Releases(ctx); !apperr.Is(err, apperr.FeedsInvalidData) {
+		t.Fatalf("Releases() = %v, want %s", err, apperr.FeedsInvalidData)
 	}
 }

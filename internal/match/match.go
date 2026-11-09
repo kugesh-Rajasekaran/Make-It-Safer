@@ -184,6 +184,9 @@ func names(p cvelist.Product) []name {
 		if i >= 2 && (placeholder(norm(p.Vendor)) || n == norm(p.Product) || n == norm(p.Package)) {
 			continue // no vendor to add
 		}
+		if (i == 2 && norm(p.Product) == "") || (i == 3 && norm(p.Package) == "") {
+			continue // that would be the vendor alone, which names every product of the vendor
+		}
 		out = append(out, name{name: n, withVendor: i >= 2})
 	}
 	return out
