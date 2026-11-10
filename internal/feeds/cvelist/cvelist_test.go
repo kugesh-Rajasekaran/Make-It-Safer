@@ -202,6 +202,9 @@ func TestParseRecordVectorAndWeakness(t *testing.T) {
 		{"only other CWE ids", `[]`, `[{"descriptions": [{"cweId": "CWE-787", "description": "(CWE-787|CWE-125)"}]}]`, "", "CWE-787"},
 		{"an arrow to another CWE", `[]`, `[{"descriptions": [{"cweId": "CWE-665", "description": "->CWE-281"}]}]`, "", "CWE-665"},
 		{"hyphens in a name stay", `[]`, `[{"descriptions": [{"cweId": "CWE-787", "description": "Out-of-bounds Write"}]}]`, "", "CWE-787: Out-of-bounds Write"},
+		{"brackets in a name stay", `[]`, `[{"descriptions": [{"cweId": "CWE-79", "description": "CWE-79 Improper Neutralization of Input During Web Page Generation ('Cross-site Scripting')"}]}]`, "",
+			"CWE-79: Improper Neutralization of Input During Web Page Generation ('Cross-site Scripting')"},
+		{"a colon in a name stays", `[]`, `[{"descriptions": [{"cweId": "CWE-24", "description": "Path Traversal: '../filedir'"}]}]`, "", "CWE-24: Path Traversal: '../filedir'"},
 		{"v4 supplemental values", `[{"cvssV4_0": {"baseScore": 9.3, "vectorString": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N/U:Amber"}}]`, `[]`,
 			"CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N/U:Amber", ""},
 	}

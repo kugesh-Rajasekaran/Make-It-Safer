@@ -154,8 +154,8 @@ func writeShow(w io.Writer, top *findings.Finding, matches []*findings.Finding, 
 		}
 	}
 	label = "Fix"
-	for _, fix := range fixes {
-		row(label, fix)
+	for _, fix := range fixes { // commands stay on one line, to copy them
+		_, _ = fmt.Fprintf(w, "  %-26s %s\n", label, fix)
 		label = ""
 	}
 	details := explain.Clean(cmp.Or(top.Details, top.Summary))

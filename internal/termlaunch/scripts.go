@@ -48,7 +48,7 @@ func Banner(server string, fs []*findings.Finding, cmd *fixcmd.Command) []string
 	}
 	if w := explain.Worst(fs); w != nil && explain.Why(w) != "" {
 		label := "Why"
-		if slices.ContainsFunc(fs, func(f *findings.Finding) bool { return f.CVE != w.CVE }) {
+		if slices.ContainsFunc(fs, func(f *findings.Finding) bool { return f.Kind == findings.KindVulnerability && f.CVE != w.CVE }) {
 			label += " (" + w.CVE + ")" // several CVEs: say which one this is about
 		}
 		lines = append(lines, "  "+label+": "+explain.Why(w))

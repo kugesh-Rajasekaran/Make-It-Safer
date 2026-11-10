@@ -130,7 +130,7 @@ Every vulnerability gets a verdict (in `mis findings` and `mis show`) and one li
 | Verdict | Means |
 |---|---|
 | **Act now** | Being exploited, or a critical score (9.0 or more) with a fix |
-| **This week** | A high score, or attacks likely soon |
+| **This week** | A high score, or a raised chance of attacks soon (EPSS) |
 | **Can wait** | Lower risk; it's in the weekly summary |
 | **No fix yet** | Nothing to install yet; once a fix arrives it gets its own verdict |
 | **Ignored** | It matches your ignore list (`rules.ignore`) |

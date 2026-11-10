@@ -281,8 +281,8 @@ Goal: design §4.6 "Why it matters". Branch: `feat/explain-risk`.
 
 | ID | Task | Done when |
 |---|---|---|
-| T-1200 | `feat(feeds)` keep the CVSS vector and first CWE of a CVE record, CISA's short description, and Apple's "Impact:" sentence per CVE (older cached notes are read again once) 🔒 | Parser tests on real and hand-written data |
-| T-1201 | `feat(explain)` verdict and one-line why from the vector, KEV, impact sentence or distro rating; never overstates | Table tests (v3.0, v3.1, v4.0, missing or garbled vector, ≤ 80 characters) |
+| T-1200 | `feat(feeds)` keep the CVSS vector and first CWE of a CVE record, CISA's short description, and Apple's "Impact:" sentence per CVE (older cached CVE records and Apple notes are read again once) 🔒 | Parser tests on real and hand-written data |
+| T-1201 | `feat(explain)` verdict and one-line why from the vector, KEV, EPSS, impact sentence or distro rating; never overstates, never cuts the effect | Table tests (v3.0, v3.1, v4.0, missing or garbled vector, impact sentences cut at a word) |
 | T-1202 | `feat(cli,daemon,termlaunch)` show it in notifications, `mis findings`, `mis show` (lookup on demand) and the fix banner | Output tests, JSON additive |
 
 ## 5. Spikes (verify early)

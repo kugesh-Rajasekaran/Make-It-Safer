@@ -51,8 +51,11 @@ func TestWhy(t *testing.T) {
 			"can be triggered remotely, no login, needs user action · could crash it"},
 		{"v4.0 with supplemental metrics", findings.Finding{Vector: "CVSS:4.0/AV:A/AC:L/AT:N/PR:N/UI:A/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N/U:Amber"},
 			"from the local network, no login, needs user action · could read or change data"},
-		{"likely attacks", findings.Finding{EPSS: 0.4, Vector: "CVSS:3.1/AV:P/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"},
-			"attacks likely soon · needs physical access · limited impact"},
+		{"EPSS that raised the priority", findings.Finding{EPSS: 0.4, Priority: findings.High, Vector: "CVSS:3.1/AV:P/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"},
+			"40% chance of attacks soon · needs physical access · limited impact"},
+		{"EPSS that didn't raise it", findings.Finding{EPSS: 0.4, Priority: findings.Normal, Vector: "CVSS:3.1/AV:P/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"},
+			"needs physical access · limited impact"},
+		{"line and paragraph separators", findings.Finding{Impact: "An app\u2028may\u2029crash."}, "An app may crash"},
 		{"Apple's words for Apple software", findings.Finding{Source: "macos", Vector: "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H",
 			Impact: "An app may be able to gain root privileges. Apple is aware of a report that this issue may have been exploited."},
 			"An app may be able to gain root privileges"},
@@ -101,8 +104,14 @@ func TestFacts(t *testing.T) {
 		!strings.HasPrefix(mac[2].Value, "Yes: on CISA's list") {
 		t.Errorf("mac facts = %+v", mac)
 	}
-	if low := Facts(&findings.Finding{EPSS: 0.001}); low[0].Value != "Not on CISA's list of exploited vulnerabilities · under 1% chance of attacks in the next 30 days (EPSS)" {
-		t.Errorf("tiny EPSS = %+v", low)
+	for _, e := range []float64{0.001, 0.005, 0.009} {
+		if low := Facts(&findings.Finding{EPSS: e}); low[0].Value != "Not on CISA's list of exploited vulnerabilities · under 1% chance of attacks in the next 30 days (EPSS)" {
+			t.Errorf("EPSS %v = %+v", e, low)
+		}
+	}
+	long := "An app may be able to cause unexpected app termination or arbitrary code execution with kernel privileges."
+	if got := Facts(&findings.Finding{Source: "macos", Impact: long}); got[0].Value != strings.TrimSuffix(long, ".") {
+		t.Errorf("mis show keeps the whole sentence: %q", got[0].Value)
 	}
 }
 

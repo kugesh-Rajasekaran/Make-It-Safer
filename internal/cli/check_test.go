@@ -60,3 +60,15 @@ func TestShowCleansFeedText(t *testing.T) {
 		t.Fatalf("exit %d, output %q", code, out)
 	}
 }
+
+// Invisible characters that reorder or hide text never reach the terminal,
+// and a vulnerability without a fix doesn't say so twice.
+func TestCleanAndNoFixLine(t *testing.T) {
+	if got := clean("a\u202eb\u200bc\u2028d\x1be\tf"); got != "abcde\tf" {
+		t.Errorf("clean = %q", got)
+	}
+	l := line(&findings.Finding{Server: "web", Kind: findings.KindVulnerability, CVE: "CVE-2024-6387", Source: "openssh", Installed: "1", Priority: findings.Urgent})
+	if strings.Count(strings.ToLower(l), "no fix yet") != 1 {
+		t.Errorf("line = %q", l)
+	}
+}

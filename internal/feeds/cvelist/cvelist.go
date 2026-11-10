@@ -244,6 +244,7 @@ func kevListed(sets []metricSet) bool {
 var (
 	vectorPattern = regexp.MustCompile(`^CVSS:[0-9.]+(/[A-Za-z]+:[A-Za-z]+)+$`) // v4 has values like U:Amber
 	cweInText     = regexp.MustCompile(`CWE-[0-9]+`)
+	emptyBrackets = regexp.MustCompile(`\(\s*[|,\s]*\)`) // "(CWE-787|CWE-125)" once the ids are gone
 	cwePattern    = regexp.MustCompile(`^CWE-[0-9]{1,6}$`)
 )
 
@@ -282,12 +283,8 @@ func firstWeakness(problems []problemType) string {
 			// Some records repeat CWE ids in the name ("CWE-190: Integer
 			// Overflow CWE-190", "(CWE-787|CWE-125)", "->CWE-281"): keep words only.
 			name := strings.ReplaceAll(cweInText.ReplaceAllString(d.Description, " "), "->", " ")
-			name = strings.Join(strings.Fields(strings.Map(func(r rune) rune {
-				if strings.ContainsRune(":()|<>", r) {
-					return ' '
-				}
-				return r
-			}, name)), " ")
+			name = emptyBrackets.ReplaceAllString(name, " ")
+			name = strings.Trim(strings.Join(strings.Fields(name), " "), " :|")
 			if !strings.ContainsFunc(name, unicode.IsLetter) {
 				return d.CWE
 			}

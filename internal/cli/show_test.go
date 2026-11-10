@@ -110,3 +110,20 @@ func TestShowOffline(t *testing.T) {
 		t.Errorf("offline:\n%s", out)
 	}
 }
+
+// A heads-up is looked up too, so its page explains the risk.
+func TestShowLooksUpEarlyWarnings(t *testing.T) {
+	paths := newConfigHome(t)
+	withServers(t, paths, false, "web")
+	f := openVuln("web")
+	f.Kind, f.Fixed = findings.KindEarlyWarning, ""
+	putFindings(t, paths, f)
+	orig := lookupCVE
+	t.Cleanup(func() { lookupCVE = orig })
+	lookupCVE = func(_ context.Context, _ *engine.Engine, id string) (*cvelist.Record, error) {
+		return &cvelist.Record{ID: id, Score: 9.8, Vector: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"}, nil
+	}
+	if _, out, _ := runCLI(t, "show", testCVE); !strings.Contains(out, "HEADS-UP — can be triggered remotely") || !strings.Contains(out, "CVSS 9.8 of 10") {
+		t.Errorf("early warning page:\n%s", out)
+	}
+}

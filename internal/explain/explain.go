@@ -16,8 +16,8 @@ import (
 // MaxImpact is the longest a source's impact sentence gets.
 const MaxImpact = 80
 
-// likelyEPSS is the EPSS from which attacks count as likely soon (the
-// default rules.alert_when.min_epss).
+// likelyEPSS is the EPSS from which the chance of attacks is worth saying
+// (the default rules.alert_when.min_epss).
 const likelyEPSS = 0.10
 
 // Verdict says when to act on a finding. It follows the priority, so the
@@ -53,8 +53,8 @@ func Why(f *findings.Finding) string {
 	switch {
 	case f.KEV:
 		alert = "being exploited"
-	case f.EPSS >= likelyEPSS:
-		alert = "attacks likely soon"
+	case f.EPSS >= likelyEPSS && f.Priority >= findings.High: // only when it made the finding urgent or high
+		alert = chance(f.EPSS) + " chance of attacks soon"
 	}
 	return join(alert, Risk(f))
 }
@@ -79,9 +79,14 @@ func Risk(f *findings.Finding) string {
 }
 
 // Impact is the source's own sentence on what an attacker could do
-// (Apple's "Impact:", CISA's description): its first sentence, cleaned and
-// shortened at a word.
+// (Apple's "Impact:", CISA's description), for one-line places: its first
+// sentence, shortened at a word.
 func Impact(f *findings.Finding) string {
+	return words(sentence(f), MaxImpact)
+}
+
+// sentence is the first sentence of the source's impact text, cleaned.
+func sentence(f *findings.Finding) string {
 	if f == nil {
 		return ""
 	}
@@ -89,7 +94,7 @@ func Impact(f *findings.Finding) string {
 	if i := strings.Index(s, ". "); i > 0 {
 		s = s[:i]
 	}
-	return words(strings.TrimSuffix(s, "."), MaxImpact)
+	return strings.TrimSuffix(s, ".")
 }
 
 // Worst is the most severe vulnerability among fs: highest priority, then
@@ -125,14 +130,14 @@ func Facts(f *findings.Finding) []Fact {
 			out = append(out, Fact{label, Capitalize(value)})
 		}
 	}
-	what := ""
+	what := "" // mis show wraps long values, so the whole sentence is shown
 	if isApple(f) {
-		what = Impact(f)
+		what = sentence(f)
 	}
 	if what == "" && v != nil {
 		what = v.effect()
 	}
-	add("What an attacker could do", cmp.Or(what, Impact(f)))
+	add("What an attacker could do", cmp.Or(what, sentence(f)))
 	if v != nil {
 		how := []string{v.access()}
 		if v["UI"] == "N" {
@@ -160,7 +165,7 @@ func Facts(f *findings.Finding) []Fact {
 }
 
 func chance(epss float64) string {
-	if epss < 0.005 {
+	if epss < 0.01 {
 		return "under 1%"
 	}
 	return fmt.Sprintf("%.0f%%", epss*100)
@@ -279,7 +284,7 @@ func Clean(s string) string { return clean(s) }
 
 func clean(s string) string {
 	s = strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == ' ' || r == ' ' {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) { // line separators are spaces to Fields below
 			return ' '
 		}
 		return r

@@ -47,6 +47,11 @@ func TestRemoteScriptAndCommand(t *testing.T) {
 	if !slices.ContainsFunc(two, func(l string) bool { return strings.HasPrefix(l, "  Why (CVE-2024-0009): being exploited") }) {
 		t.Fatalf("with several CVEs the why line names its CVE: %q", two)
 	}
+	withRestart := Banner("web", []*findings.Finding{{Kind: findings.KindReboot},
+		{Kind: findings.KindVulnerability, CVE: "CVE-2024-0009", Source: "openssh", Fixed: "2", KEV: true}}, cmd)
+	if !slices.ContainsFunc(withRestart, func(l string) bool { return strings.HasPrefix(l, "  Why: being exploited") }) {
+		t.Fatalf("one CVE plus a restart: the why line needs no CVE name: %q", withRestart)
+	}
 	if reboot := Banner("web", []*findings.Finding{{Kind: findings.KindReboot}}, &fixcmd.Command{}); slices.ContainsFunc(reboot, func(l string) bool { return strings.Contains(l, "Why:") }) {
 		t.Fatalf("a restart has no why line: %q", reboot)
 	}
