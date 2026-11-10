@@ -106,6 +106,7 @@ func (s *Store) Merge(server string, current []*Finding, kinds []Kind, now time.
 		old.Installed, old.Fixed, old.ProOnly = cur.Installed, cur.Fixed, cur.ProOnly
 		old.Summary, old.DistroPriority, old.VulnID = cur.Summary, cur.DistroPriority, cur.VulnID
 		old.Score, old.EPSS, old.KEV, old.Priority = cur.Score, cur.EPSS, cur.KEV, cur.Priority
+		old.Vector, old.Weakness, old.Impact, old.Details = cur.Vector, cur.Weakness, cur.Impact, cur.Details
 		old.LastSeen = now
 		switch {
 		case wasResolved:

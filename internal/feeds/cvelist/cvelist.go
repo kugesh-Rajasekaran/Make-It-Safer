@@ -6,6 +6,7 @@ package cvelist
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -13,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/apperr"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/config"
@@ -25,6 +27,9 @@ const DefaultBase = "https://raw.githubusercontent.com/CVEProject/cvelistV5/main
 // refreshAfter is how long a cached record is trusted (scores get added later).
 const refreshAfter = 7 * 24 * time.Hour
 
+// recordFormat 2 added Vector and Weakness.
+const recordFormat = 2
+
 var idPattern = regexp.MustCompile(`^CVE-([0-9]{4})-([0-9]{4,})$`)
 
 // Record is the part of a CVE record Make-It-Safer uses. Its text is data
@@ -34,6 +39,9 @@ type Record struct {
 	Title       string    `json:"title,omitempty"`
 	Description string    `json:"description,omitempty"` // shortened
 	Score       float64   `json:"score"`                 // highest CVSS base score from the CNA or CISA (0 = none)
+	Vector      string    `json:"vector,omitempty"`      // the CVSS vector of that score, e.g. CVSS:3.1/AV:N/…
+	Weakness    string    `json:"weakness,omitempty"`    // the first CWE, e.g. "CWE-364: Signal Handler Race Condition"
+	Format      int       `json:"format,omitempty"`      // recordFormat; older cached records are read again
 	KEV         bool      `json:"kev,omitempty"`         // CISA marked it actively exploited
 	Products    []Product `json:"products,omitempty"`    // from the CNA and CISA (ADP)
 	Rejected    bool      `json:"rejected,omitempty"`
@@ -75,16 +83,23 @@ func (c *Client) get(ctx context.Context, id string, fresh bool) (*Record, error
 		return nil, apperr.New(apperr.CVEInvalidID, "not a CVE id: "+strconv.Quote(id))
 	}
 	path := filepath.Join(c.Cache, id+".json")
+	var older *Record                                         // a recent copy in an older format: used if the CVE List can't be reached
 	if data, err := os.ReadFile(path); err == nil && !fresh { //nolint:gosec // validated id inside our cache dir
 		var r Record
 		if json.Unmarshal(data, &r) == nil && c.Now().Sub(r.Fetched) < refreshAfter {
-			return &r, nil
+			if r.Format == recordFormat {
+				return &r, nil
+			}
+			older = &r
 		}
 	}
 	n, _ := strconv.Atoi(m[2])
 	url := c.Base + "/cves/" + m[1] + "/" + strconv.Itoa(n/1000) + "xxx/" + id + ".json"
 	resp, err := c.Feeds.Get(ctx, url, "")
 	if err != nil {
+		if older != nil {
+			return older, nil
+		}
 		return nil, err
 	}
 	r, err := Parse(resp.Body, c.Now())
@@ -127,10 +142,12 @@ type recordJSON struct {
 			Descriptions []description  `json:"descriptions"`
 			Metrics      []metricSet    `json:"metrics"`
 			Affected     []affectedJSON `json:"affected"`
+			ProblemTypes []problemType  `json:"problemTypes"`
 		} `json:"cna"`
 		ADP []struct {
-			Metrics  []metricSet    `json:"metrics"`
-			Affected []affectedJSON `json:"affected"`
+			Metrics      []metricSet    `json:"metrics"`
+			Affected     []affectedJSON `json:"affected"`
+			ProblemTypes []problemType  `json:"problemTypes"`
 		} `json:"adp"`
 	} `json:"containers"`
 }
@@ -138,6 +155,13 @@ type recordJSON struct {
 type description struct {
 	Lang  string `json:"lang"`
 	Value string `json:"value"`
+}
+
+type problemType struct {
+	Descriptions []struct {
+		CWE         string `json:"cweId"`
+		Description string `json:"description"`
+	} `json:"descriptions"`
 }
 
 type affectedJSON struct {
@@ -157,7 +181,7 @@ const (
 )
 
 func (r recordJSON) compact(now time.Time) *Record {
-	out := &Record{ID: r.Metadata.ID, Title: shorten(r.Containers.CNA.Title, maxText), Fetched: now, Rejected: r.Metadata.State == "REJECTED"}
+	out := &Record{ID: r.Metadata.ID, Title: shorten(r.Containers.CNA.Title, maxText), Fetched: now, Rejected: r.Metadata.State == "REJECTED", Format: recordFormat}
 	if t, err := time.Parse(time.RFC3339, strings.TrimSuffix(r.Metadata.Published, "Z")+"Z"); err == nil {
 		out.Published = t
 	}
@@ -171,11 +195,14 @@ func (r recordJSON) compact(now time.Time) *Record {
 	}
 	sets := r.Containers.CNA.Metrics
 	affected := r.Containers.CNA.Affected
+	problems := r.Containers.CNA.ProblemTypes
 	for _, adp := range r.Containers.ADP {
 		sets = append(sets, adp.Metrics...)
 		affected = append(affected, adp.Affected...)
+		problems = append(problems, adp.ProblemTypes...)
 	}
-	out.Score, out.KEV = maxScore(sets), kevListed(sets)
+	out.Score, out.Vector = maxScore(sets)
+	out.KEV, out.Weakness = kevListed(sets), firstWeakness(problems)
 	for _, a := range affected {
 		p := Product{Vendor: a.Vendor, Product: a.Product, Package: a.PackageName, CollectionURL: a.CollectionURL}
 		if len(p.Vendor) > maxProductText || len(p.Product) > maxProductText || len(p.Package) > maxProductText || len(p.CollectionURL) > maxProductText {
@@ -214,21 +241,55 @@ func kevListed(sets []metricSet) bool {
 	return false
 }
 
-// maxScore returns the highest CVSS base score (v4.0, v3.1, v3.0) found.
-func maxScore(sets []metricSet) float64 {
-	best := 0.0
+var (
+	vectorPattern = regexp.MustCompile(`^CVSS:[0-9.]+(/[A-Za-z]+:[A-Za-z]+)+$`) // v4 has values like U:Amber
+	cweInText     = regexp.MustCompile(`CWE-[0-9]+`)
+	emptyBrackets = regexp.MustCompile(`\(\s*[|,\s]*\)`) // "(CWE-787|CWE-125)" once the ids are gone
+	cwePattern    = regexp.MustCompile(`^CWE-[0-9]{1,6}$`)
+)
+
+// maxScore returns the highest CVSS base score (v4.0, v3.1, v3.0) found,
+// with its vector ("" if the vector looks wrong). Ties keep the first, in a
+// fixed order, so the result doesn't change between runs.
+func maxScore(sets []metricSet) (float64, string) {
+	best, vector := 0.0, ""
 	for _, set := range sets {
-		for key, raw := range set {
+		for _, key := range slices.Sorted(maps.Keys(set)) {
 			if !strings.HasPrefix(key, "cvssV4") && !strings.HasPrefix(key, "cvssV3") {
 				continue
 			}
 			var m struct {
 				BaseScore float64 `json:"baseScore"`
+				Vector    string  `json:"vectorString"`
 			}
-			if json.Unmarshal(raw, &m) == nil && m.BaseScore > best && m.BaseScore <= 10 {
-				best = m.BaseScore
+			if json.Unmarshal(set[key], &m) == nil && m.BaseScore > best && m.BaseScore <= 10 {
+				best, vector = m.BaseScore, ""
+				if len(m.Vector) <= 200 && vectorPattern.MatchString(m.Vector) {
+					vector = m.Vector
+				}
 			}
 		}
 	}
-	return best
+	return best, vector
+}
+
+// firstWeakness returns the first CWE named in the record, with its name.
+func firstWeakness(problems []problemType) string {
+	for _, p := range problems {
+		for _, d := range p.Descriptions {
+			if !cwePattern.MatchString(d.CWE) {
+				continue
+			}
+			// Some records repeat CWE ids in the name ("CWE-190: Integer
+			// Overflow CWE-190", "(CWE-787|CWE-125)", "->CWE-281"): keep words only.
+			name := strings.ReplaceAll(cweInText.ReplaceAllString(d.Description, " "), "->", " ")
+			name = emptyBrackets.ReplaceAllString(name, " ")
+			name = strings.Trim(strings.Join(strings.Fields(name), " "), " :|")
+			if !strings.ContainsFunc(name, unicode.IsLetter) {
+				return d.CWE
+			}
+			return shorten(d.CWE+": "+name, 120)
+		}
+	}
+	return ""
 }

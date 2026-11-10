@@ -3,9 +3,9 @@
 ## TL;DR
 
 > **What we build:** `mis`, a Go command-line tool and background service for your Mac (then Linux). It finds which of your Ubuntu/Debian servers are affected by new vulnerabilities, notifies you, and opens SSH with the fix command already typed in.
-> **Milestones:** 12 (M0–M11), done in order. **First usable version:** after M5.
+> **Milestones:** 13 (M0–M12), done in order. **First usable version:** after M5.
 > **Effort:** Large overall; each milestone is S, M or L.
-> **Critical path:** M0 → M1 → M2 → M3 → M4 → M5 → M6 → M7; M8–M11 build on M7
+> **Critical path:** M0 → M1 → M2 → M3 → M4 → M5 → M6 → M7; M8–M12 build on M7
 
 How it works: [`design.md`](design.md) · Rules for working in this repo: [`CLAUDE.md`](../CLAUDE.md) · Terms: [`CONTEXT.md`](../CONTEXT.md)
 
@@ -100,7 +100,8 @@ For every server you own, always know which vulnerabilities affect it, and be on
 | M8 | Auto-unlock (macOS) | M | restart your Mac and never type the passphrase | ✅ Built · tested on your Mac |
 | M9 | Settings screen | S | change alert scores, reminders and the terminal with `mis config` | ✅ Built · tested in a real terminal |
 | M10 | This computer | L | have the Mac (or Linux desktop) `mis` runs on checked too, from `mis init` | ✅ Built · Mac tested on your Mac; Linux desktop by tests only |
-| M11 | One-line install | S | install or update with one `curl` command, no Go needed | ✅ Built · first release pending |
+| M11 | One-line install | S | install or update with one `curl` command, no Go needed | ✅ Built · v0.1.0 released |
+| M12 | Explain each vulnerability | S | see at a glance whether to act now or later, and why | ✅ Built |
 
 ### M0 · Foundations (S)
 Goal: an empty but solid project.
@@ -274,6 +275,15 @@ Goal: install without Go or a clone. Branch: `feat/release-install`.
 | T-1102 | `docs` README: benefits first, one-line install, agent prompt, notification-to-fix flow, encryption explained, data sources | Reviewed by you |
 
 **You check:** after the first tag, run the `curl` command from the README on your Mac.
+
+### M12 · Explain each vulnerability (S)
+Goal: design §4.6 "Why it matters". Branch: `feat/explain-risk`.
+
+| ID | Task | Done when |
+|---|---|---|
+| T-1200 | `feat(feeds)` keep the CVSS vector and first CWE of a CVE record, CISA's short description, and Apple's "Impact:" sentence per CVE (older cached CVE records and Apple notes are read again once) 🔒 | Parser tests on real and hand-written data |
+| T-1201 | `feat(explain)` verdict and one-line why from the vector, KEV, EPSS, impact sentence or distro rating; never overstates, never cuts the effect | Table tests (v3.0, v3.1, v4.0, missing or garbled vector, impact sentences cut at a word) |
+| T-1202 | `feat(cli,daemon,termlaunch)` show it in notifications, `mis findings`, `mis show` (lookup on demand) and the fix banner | Output tests, JSON additive |
 
 ## 5. Spikes (verify early)
 

@@ -263,3 +263,18 @@ func TestLoadDropsNullFindings(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A later check updates the facts a finding is explained with.
+func TestMergeUpdatesTheFacts(t *testing.T) {
+	st := &Store{Checked: map[string]time.Time{}, Notes: map[string]time.Time{}}
+	now := time.Now()
+	old := &Finding{ID: "web/vulnerability/CVE-2024-6387/openssh", Server: "web", Kind: KindVulnerability, CVE: "CVE-2024-6387", Fixed: "2"}
+	st.Merge("web", []*Finding{old}, []Kind{KindVulnerability}, now)
+	cur := *old
+	cur.Vector, cur.Weakness, cur.Impact, cur.Details = "CVSS:3.1/AV:N", "CWE-364", "runs code", "A race condition."
+	st.Merge("web", []*Finding{&cur}, []Kind{KindVulnerability}, now)
+	f := st.Find(old.ID)
+	if f.Vector != "CVSS:3.1/AV:N" || f.Weakness != "CWE-364" || f.Impact != "runs code" || f.Details != "A race condition." {
+		t.Fatalf("after merge: %+v", f)
+	}
+}

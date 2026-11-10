@@ -75,12 +75,24 @@ You mostly do nothing: the background service checks by itself and notifies you.
 
 | Notification | Means | Click |
 |---|---|---|
-| 🔴 / 🟠 **CVE-… · openssh** · "2 servers affected · fix available" | A confirmed vulnerability with a fix. 🔴 is urgent (actively exploited, or CVSS ≥ 9), reminded every 4 h; 🟠 daily. | A server button opens its fix. "All servers…", or the notification itself, opens a list to pick from. |
+| 🔴 / 🟠 **CVE-… · openssh** · "2 servers affected · fix available" | A confirmed vulnerability with a fix. The line above says why it matters (e.g. "Can be triggered remotely, no login · could take it over"). 🔴 is urgent (actively exploited, or CVSS ≥ 9), reminded every 4 h; 🟠 daily. | A server button opens its fix. "All servers…", or the notification itself, opens a list to pick from. |
 | 🟡 **Heads-up · CVE-… · openssl** | An early warning: a critical new CVE that names software you have, before your distro has confirmed it. No fix yet. | Opens `mis show CVE-…` |
 | ✅ **CVE-… · Fixed on all servers** | Every affected server is fixed. Other notifications end the same way: ✅ "macOS … installed", ✅ "web restarted". A heads-up can also end as ✅ "not affected". | — |
 | **Weekly summary** | Normal-priority updates waiting (not counting ones you snoozed or accepted). | Opens `mis findings` |
 | **Make-It-Safer is locked** | After a restart. See [unlock](#after-a-restart-unlock). | Opens `mis unlock` |
 | **Vulnerability data is getting old** / **Package lists are getting old** | No successful check for a day (offline?), or a server's package list wasn't refreshed for a day (locked service, unreachable server); the notification names the server. | Opens `mis findings` |
+
+**Act now or later?** Each vulnerability has a verdict in `mis findings` and `mis show`, and a line saying why (also in the notification and the fix window):
+
+| Verdict | Means |
+|---|---|
+| **Act now** | Urgent: being exploited, or a critical score (9.0 or more) with a fix |
+| **This week** | High: a high score, or a raised chance of attacks soon (EPSS) |
+| **Can wait** | Normal: lower risk, in the weekly summary |
+| **No fix yet** | Nothing to install yet; once a fix arrives it gets its own verdict |
+| **Ignored** | It matches your ignore list (`rules.ignore`) |
+
+The line under it says why, in plain words. "Can be triggered remotely" means the attack can arrive over the network; `mis` can't see your firewall, so it doesn't claim your server is exposed.
 
 **Commands you'll use:**
 
@@ -88,7 +100,7 @@ You mostly do nothing: the background service checks by itself and notifies you.
 |---|---|
 | `mis status` | Is the service running and unlocked, and what's open per server |
 | `mis findings` | Everything open, most urgent first (`--all` includes items without a fix and accepted ones) |
-| `mis show CVE-…` | One vulnerability: what it is, which servers, the fix |
+| `mis show CVE-…` | One vulnerability: act now or later and why, what an attacker could do, which servers, the fix |
 | `mis check` | Check now, instead of waiting |
 | `mis ack CVE-… --until 2026-12-01` | Snooze it until a date after today (`--reason` to remember why). Run it again with another date to move the snooze, or on an accepted risk to snooze it instead |
 | `mis ack CVE-…` | Accept the risk: no more reminders. It comes back if it gets more urgent. |

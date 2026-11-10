@@ -8,10 +8,12 @@ package termlaunch
 import (
 	"encoding/base64"
 	"fmt"
+	"slices"
 	"strings"
 	"unicode"
 
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/config"
+	"github.com/kugesh-rajasekaran/make-it-safer/internal/explain"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/findings"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/fixcmd"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/sshx"
@@ -43,6 +45,13 @@ func Banner(server string, fs []*findings.Finding, cmd *fixcmd.Command) []string
 			}
 			lines = append(lines, line)
 		}
+	}
+	if w := explain.Worst(fs); w != nil && explain.Why(w) != "" {
+		label := "Why"
+		if slices.ContainsFunc(fs, func(f *findings.Finding) bool { return f.Kind == findings.KindVulnerability && f.CVE != w.CVE }) {
+			label += " (" + w.CVE + ")" // several CVEs: say which one this is about
+		}
+		lines = append(lines, "  "+label+": "+explain.Why(w))
 	}
 	for _, n := range cmd.Notes {
 		lines = append(lines, "  ⚠ "+n)

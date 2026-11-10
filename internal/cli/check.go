@@ -16,6 +16,7 @@ import (
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/config"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/daemon"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/engine"
+	"github.com/kugesh-rajasekaran/make-it-safer/internal/explain"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/findings"
 )
 
@@ -100,7 +101,7 @@ func printCheck(w io.Writer, res *engine.Result) {
 		sortFindings(changed)
 		const shown = 20 // most urgent first; a Mac's first check can find hundreds
 		for _, f := range changed[:min(len(changed), shown)] {
-			_, _ = fmt.Fprintln(w, "  "+line(f))
+			_, _ = fmt.Fprintln(w, entry(f, "  "))
 		}
 		if len(changed) > shown {
 			_, _ = fmt.Fprintf(w, "  … and %d more\n", len(changed)-shown)
@@ -146,13 +147,25 @@ func subject(f *findings.Finding) string {
 	return f.CVE + " (" + f.Source + ")"
 }
 
-// line formats one finding on one line.
-func line(f *findings.Finding) string {
-	icon, label := icons[f.Priority], f.Priority.String()
-	if f.Kind == findings.KindEarlyWarning {
-		icon, label = "🟡", "early"
+// entry formats a finding: its line and, for a vulnerability, why it
+// matters on the line below.
+func entry(f *findings.Finding, indent string) string {
+	s := indent + line(f)
+	if f.Kind == findings.KindVulnerability {
+		if why := explain.Why(f); why != "" {
+			s += "\n" + indent + "     " + why
+		}
 	}
-	s := fmt.Sprintf("%s %-6s %-14s %s", icon, label, f.Server, subject(f))
+	return s
+}
+
+// line formats one finding on one line, led by when to act on it.
+func line(f *findings.Finding) string {
+	icon := icons[f.Priority]
+	if f.Kind == findings.KindEarlyWarning {
+		icon = "🟡"
+	}
+	s := fmt.Sprintf("%s %-10s %-14s %s", icon, explain.Verdict(f), f.Server, subject(f))
 	switch {
 	case f.Kind == findings.KindEarlyWarning:
 		s += "  unconfirmed: your distro hasn't assessed it yet"
@@ -163,11 +176,9 @@ func line(f *findings.Finding) string {
 		s += " — " + clean(f.Summary)
 	case f.HasFix():
 		s += fmt.Sprintf("  %s → %s", f.Installed, clean(f.Fixed))
-	default:
-		s += "  no fix yet"
-	}
+	} // without a fix the verdict already says "No fix yet"
 	var tags []string
-	if f.KEV {
+	if f.KEV && f.Kind != findings.KindVulnerability { // a vulnerability says so in its why line
 		tags = append(tags, "actively exploited")
 	}
 	if f.ProOnly {
@@ -180,6 +191,21 @@ func line(f *findings.Finding) string {
 		s += "  (" + strings.Join(tags, ", ") + ")"
 	}
 	return s
+}
+
+// findingView is a finding in --json output, with its verdict and why.
+type findingView struct {
+	*findings.Finding
+	Verdict string `json:"verdict"`
+	Why     string `json:"why,omitempty"`
+}
+
+func views(fs []*findings.Finding) []findingView {
+	out := make([]findingView, len(fs))
+	for i, f := range fs {
+		out[i] = findingView{Finding: f, Verdict: explain.Verdict(f), Why: explain.Why(f)}
+	}
+	return out
 }
 
 func sortFindings(fs []*findings.Finding) {
@@ -222,12 +248,12 @@ func (a *app) findingsCmd() *cobra.Command {
 				shown = append(shown, f)
 			}
 			sortFindings(shown)
-			return a.emit(shown, func(w io.Writer) {
+			return a.emit(views(shown), func(w io.Writer) {
 				if len(shown) == 0 {
 					_, _ = fmt.Fprintln(w, "✓ Nothing to fix.")
 				}
 				for _, f := range shown {
-					_, _ = fmt.Fprintln(w, line(f))
+					_, _ = fmt.Fprintln(w, entry(f, ""))
 				}
 				if hidden > 0 {
 					_, _ = fmt.Fprintf(w, "\n%d more without a fix yet or accepted (show them with --all)\n", hidden)
@@ -238,71 +264,6 @@ func (a *app) findingsCmd() *cobra.Command {
 	cmd.Flags().StringVar(&server, "server", "", "only this server")
 	cmd.Flags().BoolVar(&all, "all", false, "include findings without a fix and accepted ones")
 	return cmd
-}
-
-func (a *app) showCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "show <CVE-…>",
-		Short: "Show a vulnerability: what it is, which servers have it, and the fix",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			cve, err := parseCVE(args[0])
-			if err != nil {
-				return err
-			}
-			paths, _, err := a.setup()
-			if err != nil {
-				return err
-			}
-			st, err := findings.Load(paths)
-			if err != nil {
-				return err
-			}
-			matches := slices.DeleteFunc(slices.Clone(st.Findings), func(f *findings.Finding) bool { return f.CVE != cve })
-			if len(matches) == 0 {
-				return apperr.New(apperr.FindingsNotFound, cve+" doesn't affect any of your servers (as of the last check)")
-			}
-			sortFindings(matches)
-			return a.emit(matches, func(w io.Writer) {
-				f := matches[0]
-				_, _ = fmt.Fprintf(w, "%s %s\n", cve, clean(f.Summary))
-				if f.Score > 0 {
-					_, _ = fmt.Fprintf(w, "Severity: CVSS %.1f", f.Score)
-				} else {
-					_, _ = fmt.Fprintf(w, "Severity: %s (distro rating)", clean(cmp.Or(f.DistroPriority, "unknown")))
-				}
-				if f.EPSS > 0 {
-					_, _ = fmt.Fprintf(w, " · EPSS %.0f%%", f.EPSS*100)
-				}
-				if f.KEV {
-					_, _ = fmt.Fprint(w, " · actively exploited (CISA KEV)")
-				}
-				_, _ = fmt.Fprintf(w, "\n\nServers:\n")
-				early := false
-				for _, m := range matches {
-					state, fixed := string(m.State), clean(cmp.Or(m.Fixed, "no fix yet"))
-					if !m.Open() {
-						state = cmp.Or(m.Resolution, "fixed") + " " + m.ResolvedAt.Local().Format("2006-01-02")
-					}
-					if m.Kind == findings.KindEarlyWarning {
-						early, fixed, state = true, "not assessed by your distro yet", "early warning, "+state
-					}
-					_, _ = fmt.Fprintf(w, "  %s  %s %s → %s  [%s]\n", m.Server, m.Source, m.Installed, fixed, state)
-				}
-				if early {
-					_, _ = fmt.Fprintln(w, "\nEarly warnings come from the CVE List before your distro has assessed the CVE.\n"+
-						"They're matched by product name, so they may not apply. The distro's verdict replaces them.")
-				}
-				_, _ = fmt.Fprintf(w, "\nMore: https://www.cve.org/CVERecord?id=%s", cve)
-				if slices.ContainsFunc(matches, func(m *findings.Finding) bool { return m.Source != "macos" && m.Source != "safari" }) {
-					_, _ = fmt.Fprintf(w, " · https://ubuntu.com/security/%s · https://security-tracker.debian.org/tracker/%s", cve, cve)
-				} else {
-					_, _ = fmt.Fprint(w, " · https://support.apple.com/en-us/100100")
-				}
-				_, _ = fmt.Fprintln(w)
-			})
-		},
-	}
 }
 
 // describe names what a check covers: "this Mac and web-1", or "4 servers".

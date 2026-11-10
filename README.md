@@ -92,9 +92,12 @@ When a vulnerability with a fix affects your servers, you get one notification p
 
 ```text
 🟠 CVE-2024-6387 · openssh
+Can be triggered remotely, no login · could take it over
 2 servers affected · fix available
 [ db-1 ]   [ web-1 ]   [ All servers… ]
 ```
+
+The second line says why it matters, so you can decide whether it can wait (see [Act now or later?](#act-now-or-later)).
 
 1. **Click a server button** (here `web-1`).
 2. **Your terminal opens and connects with `ssh` as you.**
@@ -105,6 +108,7 @@ When a vulnerability with a fix affects your servers, you get one notification p
    ```text
    Make-It-Safer · web-1
      CVE-2024-6387  openssh  installed 1:9.6p1-3ubuntu13 → fixed in 1:9.6p1-3ubuntu13.3
+     Why: can be triggered remotely, no login · could take it over
    Enter = run · edit it first · Ctrl-C = skip to a normal shell
 
    ubuntu@web-1:~$ sudo apt-get update && sudo apt-get install --only-upgrade openssh-client openssh-server openssh-sftp-server
@@ -118,6 +122,42 @@ Why doesn't it just run the fix? Running it automatically would mean `mis` holds
 The other buttons:
 - **All servers…** (or a click on the notification itself) opens a list in your terminal. Pick a server and its SSH window opens; the list comes back so you can pick the next one, and `q` leaves it.
 - **On a Mac update notification** ("macOS 15.8.2 · fixes 58 vulnerabilities"), the **This Mac** button (or a click on the notification) opens System Settings › Software Update.
+
+## Act now or later?
+
+Every vulnerability gets a verdict (in `mis findings` and `mis show`) and one line saying why (also in the notification and the fix window):
+
+| Verdict | Means |
+|---|---|
+| **Act now** | Being exploited, or a critical score (9.0 or more) with a fix |
+| **This week** | A high score, or a raised chance of attacks soon (EPSS) |
+| **Can wait** | Lower risk; it's in the weekly summary |
+| **No fix yet** | Nothing to install yet; once a fix arrives it gets its own verdict |
+| **Ignored** | It matches your ignore list (`rules.ignore`) |
+
+`mis show CVE-…` gives the full picture:
+
+```text
+CVE-2024-6387 · openssh
+
+  THIS WEEK — can be triggered remotely, no login · could take it over
+
+  What an attacker could do  Could take it over
+  How it's triggered         Can be triggered remotely, no login · no user
+                             action · hard to pull off
+  Severity                   CVSS 8.1 of 10
+  Being exploited?           Not on CISA's list of exploited vulnerabilities ·
+                             9% chance of attacks in the next 30 days (EPSS)
+  Your servers               web-1  openssh 1:9.6p1-3ubuntu13 → 1:9.6p1-3ubuntu13.3  [notified]
+  Fix                        mis fix web-1 CVE-2024-6387
+  Details                    A security regression (CVE-2006-5051) was
+                             discovered in OpenSSH's server (sshd). There is a
+                             race condition which can lead sshd to handle some
+                             signals in an unsafe manner.
+  Weakness                   CWE-364: Signal Handler Race Condition
+```
+
+The words come from fixed rules over the CVE record (its CVSS vector and weakness), CISA's list of exploited vulnerabilities, EPSS, and, on a Mac, Apple's own "Impact" sentence. No AI and no new services: `mis show` may download the CVE record you ask about from the CVE List. "Triggered remotely" means the attack can arrive over the network; `mis` can't see your firewall, so it never claims more. "Take it over" is about the affected software, not necessarily the whole machine.
 
 ## How the encryption works
 
@@ -173,7 +213,7 @@ All of it is public and comes over HTTPS. None of it needs an API key or account
 | [OSV.dev](https://osv.dev) | Debian and Ubuntu advisories: which package versions are affected, and the fixed version | The **names and versions of installed packages** (source package name, version and OS release such as `Debian:12`) of your servers and, on Linux, of the desktop `mis` runs on. Then the IDs of the advisories that matched |
 | [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) | Vulnerabilities being exploited right now, which makes them urgent | Nothing: it downloads the whole list |
 | [EPSS](https://www.first.org/epss/) | How likely a vulnerability is to be exploited soon | The CVE IDs of your findings |
-| [CVE List](https://github.com/CVEProject/cvelistV5) | Scores, and early warnings for brand-new CVEs, before your distribution confirms them | The CVE IDs of your findings (the records are downloaded from `raw.githubusercontent.com`) |
+| [CVE List](https://github.com/CVEProject/cvelistV5) | Scores, and early warnings for brand-new CVEs, before your distribution confirms them | The CVE IDs of your findings, and the one you ask about in `mis show` (the records are downloaded from `raw.githubusercontent.com`) |
 | [endoflife.date](https://endoflife.date) | Operating system releases that no longer get security fixes | Nothing: it downloads one list per operating system you use |
 | [Apple security releases](https://support.apple.com/en-us/100100) | macOS and Safari fixes, for a Mac running `mis` | Nothing: it downloads Apple's public pages |
 
@@ -188,7 +228,7 @@ All of it is public and comes over HTTPS. None of it needs an API key or account
 ```bash
 mis status          # what's open on each server and this computer
 mis findings        # everything open, most urgent first
-mis show CVE-…      # what it is, which servers have it, the fix
+mis show CVE-…      # act now or later, and why; which servers; the fix
 mis fix web-1       # open the fix for everything fixable on web-1 (add a CVE for just that one)
 mis check           # check now instead of waiting
 mis config          # settings: alert levels, timers, terminal, notifications

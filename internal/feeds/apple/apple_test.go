@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -51,6 +52,28 @@ func TestParseCVEs(t *testing.T) {
 	want := []string{"CVE-2026-112525", "CVE-2026-112536", "CVE-2026-113898", "CVE-2026-28991", "CVE-2026-64767", "CVE-2026-86971"}
 	if got := ParseCVEs(page); !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v", got)
+	}
+}
+
+func TestParseImpacts(t *testing.T) {
+	page, err := os.ReadFile("testdata/note.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := ParseImpacts(page)
+	want := map[string]string{
+		"CVE-2026-28991": "An app may crash.", "CVE-2026-86971": "Opening a crafted image may crash the app.",
+		"CVE-2026-113898": "An app may read private data.", "CVE-2026-64767": "A remote attacker may crash the system.",
+		"CVE-2026-112525": "An app may read kernel memory.", "CVE-2026-112536": "An app may write kernel memory.",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("impacts = %v", got)
+	}
+	// A CVE line before any "Impact:" of its entry gets none; long text is cut.
+	odd := []byte(`<p>Available for: macOS</p><p>CVE-2026-0001: someone</p><p>Available for: macOS</p><p>Impact: ` + strings.Repeat("x", 300) + `</p><p>CVE-2026-0002</p>`)
+	got = ParseImpacts(odd)
+	if _, ok := got["CVE-2026-0001"]; ok || len([]rune(got["CVE-2026-0002"])) != maxImpact {
+		t.Fatalf("odd page: %v", got)
 	}
 }
 
@@ -233,5 +256,38 @@ func TestIndexLayoutChangeIsReportedWithOldCopy(t *testing.T) {
 	srv.body.Store("<html><table><tr><td>redesigned</td></tr></table></html>")
 	if _, err := c.Releases(ctx); !apperr.Is(err, apperr.FeedsInvalidData) {
 		t.Fatalf("Releases() = %v, want %s", err, apperr.FeedsInvalidData)
+	}
+}
+
+// A note cached by an older version (no impacts) is read again once, even
+// though it is still fresh and Apple answers "not modified".
+func TestOlderCachedNoteIsReadAgain(t *testing.T) {
+	note, _ := os.ReadFile("testdata/note.html")
+	var full atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("ETag", `"v1"`)
+		if r.Header.Get("If-None-Match") == `"v1"` {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		full.Add(1)
+		_, _ = w.Write(note)
+	}))
+	defer srv.Close()
+
+	now := time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)
+	dir := t.TempDir()
+	old := `{"fetched": "2026-11-08T11:00:00Z", "etag": "\"v1\"", "cves": ["CVE-2026-28991"]}`
+	if err := os.WriteFile(filepath.Join(dir, "note-149523.json"), []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c := &Client{Feeds: feeds.NewForTest(srv.URL), Cache: dir, Now: func() time.Time { return now }}
+	r := Release{Name: "macOS Sequoia 15.8.2", Product: MacOS, Version: "15.8.2", URL: srv.URL + "/en-us/149523"}
+	n, err := c.Note(context.Background(), r)
+	if err != nil || len(n.CVEs) != 6 || n.Impacts["CVE-2026-28991"] != "An app may crash." || full.Load() != 1 {
+		t.Fatalf("note = %+v, %v (full downloads: %d)", n, err, full.Load())
+	}
+	if _, err := c.Note(context.Background(), r); err != nil || full.Load() != 1 {
+		t.Fatalf("the upgraded copy should be used from now on: %v, downloads %d", err, full.Load())
 	}
 }

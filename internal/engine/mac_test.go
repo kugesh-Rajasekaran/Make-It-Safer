@@ -139,6 +139,9 @@ func TestThisMac(t *testing.T) {
 		if f.CVE == exploited && f.Priority != findings.Urgent {
 			t.Errorf("actively exploited CVE should be urgent: %+v", f)
 		}
+		if f.CVE == "CVE-2026-28991" && f.Impact != "An app may crash." { // Apple's own words
+			t.Errorf("Apple's impact = %q", f.Impact)
+		}
 	}
 	// Six CVEs per product (the macOS 27 upgrade adds none), one Homebrew line, no end-of-life.
 	if counts["macos"] != 6 || counts["safari"] != 6 || counts["homebrew"] != 1 || len(st.Findings) != 13 {

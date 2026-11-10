@@ -191,3 +191,13 @@ func TestShowGivesUpOnASilentServer(t *testing.T) {
 		t.Fatalf("Show waited %s for a silent server", took)
 	}
 }
+
+func TestBodyTextEscapesMarkup(t *testing.T) {
+	body := "Example <b>Server</b> & co"
+	if got := bodyText([]string{"actions", "body-markup"}, body); got != "Example &lt;b&gt;Server&lt;/b&gt; &amp; co" {
+		t.Errorf("with markup: %q", got)
+	}
+	if got := bodyText([]string{"actions"}, body); got != body {
+		t.Errorf("without markup the text is shown as is: %q", got)
+	}
+}

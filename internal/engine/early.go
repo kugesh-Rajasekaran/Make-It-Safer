@@ -112,6 +112,7 @@ func (e *Engine) EarlyWarnings(ctx context.Context, servers []config.Server) (*R
 					ID: findings.MakeID(name, findings.KindEarlyWarning, r.ID+"/"+src), Server: name,
 					Kind: findings.KindEarlyWarning, CVE: r.ID, Source: src, Installed: installedVersion(inv, src),
 					Summary: cmp.Or(r.Title, r.Description), Score: r.Score, KEV: kev,
+					Vector: r.Vector, Weakness: r.Weakness, Details: r.Description,
 				}
 				f.Priority = findings.Classify(f, e.Rules, now)
 				raised = append(raised, f)
