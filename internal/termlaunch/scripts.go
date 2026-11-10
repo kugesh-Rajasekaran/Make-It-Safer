@@ -8,6 +8,7 @@ package termlaunch
 import (
 	"encoding/base64"
 	"fmt"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -45,8 +46,12 @@ func Banner(server string, fs []*findings.Finding, cmd *fixcmd.Command) []string
 			lines = append(lines, line)
 		}
 	}
-	if why := explain.Why(explain.Worst(fs)); why != "" {
-		lines = append(lines, "  Why: "+why)
+	if w := explain.Worst(fs); w != nil && explain.Why(w) != "" {
+		label := "Why"
+		if slices.ContainsFunc(fs, func(f *findings.Finding) bool { return f.CVE != w.CVE }) {
+			label += " (" + w.CVE + ")" // several CVEs: say which one this is about
+		}
+		lines = append(lines, "  "+label+": "+explain.Why(w))
 	}
 	for _, n := range cmd.Notes {
 		lines = append(lines, "  ⚠ "+n)

@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/apperr"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/config"
@@ -26,6 +27,9 @@ const DefaultBase = "https://raw.githubusercontent.com/CVEProject/cvelistV5/main
 // refreshAfter is how long a cached record is trusted (scores get added later).
 const refreshAfter = 7 * 24 * time.Hour
 
+// recordFormat 2 added Vector and Weakness.
+const recordFormat = 2
+
 var idPattern = regexp.MustCompile(`^CVE-([0-9]{4})-([0-9]{4,})$`)
 
 // Record is the part of a CVE record Make-It-Safer uses. Its text is data
@@ -37,6 +41,7 @@ type Record struct {
 	Score       float64   `json:"score"`                 // highest CVSS base score from the CNA or CISA (0 = none)
 	Vector      string    `json:"vector,omitempty"`      // the CVSS vector of that score, e.g. CVSS:3.1/AV:N/…
 	Weakness    string    `json:"weakness,omitempty"`    // the first CWE, e.g. "CWE-364: Signal Handler Race Condition"
+	Format      int       `json:"format,omitempty"`      // recordFormat; older cached records are read again
 	KEV         bool      `json:"kev,omitempty"`         // CISA marked it actively exploited
 	Products    []Product `json:"products,omitempty"`    // from the CNA and CISA (ADP)
 	Rejected    bool      `json:"rejected,omitempty"`
@@ -78,16 +83,23 @@ func (c *Client) get(ctx context.Context, id string, fresh bool) (*Record, error
 		return nil, apperr.New(apperr.CVEInvalidID, "not a CVE id: "+strconv.Quote(id))
 	}
 	path := filepath.Join(c.Cache, id+".json")
+	var older *Record                                         // a recent copy in an older format: used if the CVE List can't be reached
 	if data, err := os.ReadFile(path); err == nil && !fresh { //nolint:gosec // validated id inside our cache dir
 		var r Record
 		if json.Unmarshal(data, &r) == nil && c.Now().Sub(r.Fetched) < refreshAfter {
-			return &r, nil
+			if r.Format == recordFormat {
+				return &r, nil
+			}
+			older = &r
 		}
 	}
 	n, _ := strconv.Atoi(m[2])
 	url := c.Base + "/cves/" + m[1] + "/" + strconv.Itoa(n/1000) + "xxx/" + id + ".json"
 	resp, err := c.Feeds.Get(ctx, url, "")
 	if err != nil {
+		if older != nil {
+			return older, nil
+		}
 		return nil, err
 	}
 	r, err := Parse(resp.Body, c.Now())
@@ -169,7 +181,7 @@ const (
 )
 
 func (r recordJSON) compact(now time.Time) *Record {
-	out := &Record{ID: r.Metadata.ID, Title: shorten(r.Containers.CNA.Title, maxText), Fetched: now, Rejected: r.Metadata.State == "REJECTED"}
+	out := &Record{ID: r.Metadata.ID, Title: shorten(r.Containers.CNA.Title, maxText), Fetched: now, Rejected: r.Metadata.State == "REJECTED", Format: recordFormat}
 	if t, err := time.Parse(time.RFC3339, strings.TrimSuffix(r.Metadata.Published, "Z")+"Z"); err == nil {
 		out.Published = t
 	}
@@ -230,7 +242,8 @@ func kevListed(sets []metricSet) bool {
 }
 
 var (
-	vectorPattern = regexp.MustCompile(`^CVSS:[0-9.]+(/[A-Za-z]+:[A-Za-z])+$`)
+	vectorPattern = regexp.MustCompile(`^CVSS:[0-9.]+(/[A-Za-z]+:[A-Za-z]+)+$`) // v4 has values like U:Amber
+	cweInText     = regexp.MustCompile(`CWE-[0-9]+`)
 	cwePattern    = regexp.MustCompile(`^CWE-[0-9]{1,6}$`)
 )
 
@@ -266,9 +279,16 @@ func firstWeakness(problems []problemType) string {
 			if !cwePattern.MatchString(d.CWE) {
 				continue
 			}
-			name := strings.TrimSpace(strings.TrimPrefix(d.Description, d.CWE))
-			name = strings.TrimSpace(strings.TrimLeft(name, ":"))
-			if name == "" {
+			// Some records repeat CWE ids in the name ("CWE-190: Integer
+			// Overflow CWE-190", "(CWE-787|CWE-125)", "->CWE-281"): keep words only.
+			name := strings.ReplaceAll(cweInText.ReplaceAllString(d.Description, " "), "->", " ")
+			name = strings.Join(strings.Fields(strings.Map(func(r rune) rune {
+				if strings.ContainsRune(":()|<>", r) {
+					return ' '
+				}
+				return r
+			}, name)), " ")
+			if !strings.ContainsFunc(name, unicode.IsLetter) {
 				return d.CWE
 			}
 			return shorten(d.CWE+": "+name, 120)

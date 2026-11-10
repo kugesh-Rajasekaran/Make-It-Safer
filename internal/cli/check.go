@@ -176,9 +176,7 @@ func line(f *findings.Finding) string {
 		s += " — " + clean(f.Summary)
 	case f.HasFix():
 		s += fmt.Sprintf("  %s → %s", f.Installed, clean(f.Fixed))
-	default:
-		s += "  no fix yet"
-	}
+	} // without a fix the verdict already says "No fix yet"
 	var tags []string
 	if f.KEV && f.Kind != findings.KindVulnerability { // a vulnerability says so in its why line
 		tags = append(tags, "actively exploited")

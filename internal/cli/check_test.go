@@ -40,7 +40,7 @@ func TestEntry(t *testing.T) {
 		Priority: findings.Urgent, KEV: true, Vector: "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H"}
 	got := strings.Split(entry(f, "  "), "\n")
 	if len(got) != 2 || !strings.HasPrefix(got[0], "  🔴 Act now") ||
-		got[1] != "       being exploited · can be triggered remotely, no login · could gain full control" {
+		got[1] != "       being exploited · can be triggered remotely, no login · could take it over" {
 		t.Fatalf("entry = %q", got)
 	}
 	if e := entry(&findings.Finding{Server: "web", Kind: findings.KindReboot, Priority: findings.High}, ""); strings.Contains(e, "\n") {
@@ -56,7 +56,7 @@ func TestShowCleansFeedText(t *testing.T) {
 	putFindings(t, paths, f)
 
 	code, out, _ := runCLI(t, "show", testCVE)
-	if code != 0 || !strings.Contains(out, "rated high") || strings.ContainsAny(out, "\x1b\x07") {
+	if code != 0 || !strings.Contains(out, "openssh 1 → 2 [2J") || strings.ContainsAny(out, "\x1b\x07") {
 		t.Fatalf("exit %d, output %q", code, out)
 	}
 }

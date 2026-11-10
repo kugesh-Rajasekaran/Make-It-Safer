@@ -17,7 +17,7 @@ func TestNotificationsSayWhy(t *testing.T) {
 	cve := []*findings.Finding{{Server: "web", Kind: findings.KindVulnerability, CVE: "CVE-2024-6387", Source: "openssh", Fixed: "2",
 		Priority: findings.Urgent, KEV: true, Vector: "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H"}}
 	n := d.groupNotification(groupKey(cve[0]), cve, 0, &cfg)
-	if want := "Can be triggered remotely, no login · could gain full control\n1 server affected · fix available"; n.Body != want {
+	if want := "Can be triggered remotely, no login · could take it over\n1 server affected · fix available"; n.Body != want {
 		t.Errorf("CVE body = %q, want %q", n.Body, want)
 	}
 
@@ -31,6 +31,14 @@ func TestNotificationsSayWhy(t *testing.T) {
 	n = d.groupNotification(groupKey(apple[0]), apple, 0, &cfg)
 	if want := "Worst: An app may be able to gain root privileges\nInstall it in System Settings › Software Update."; n.Body != want {
 		t.Errorf("Apple body = %q, want %q", n.Body, want)
+	}
+
+	// The most severe CVE has no Apple sentence: the worst one Apple described is used.
+	apple = append(apple, &findings.Finding{Server: me, Kind: findings.KindVulnerability, CVE: "CVE-2026-1003", Source: "macos", Fixed: "15.8.2",
+		Priority: findings.Urgent, KEV: true, Score: 9.8, Vector: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"})
+	n = d.groupNotification(groupKey(apple[0]), apple, 0, &cfg)
+	if want := "Worst: An app may be able to gain root privileges\nInstall it in System Settings › Software Update."; n.Body != want {
+		t.Errorf("Apple body without the worst one's sentence = %q", n.Body)
 	}
 
 	plain := []*findings.Finding{{Server: "web", Kind: findings.KindVulnerability, CVE: "CVE-2026-2000", Source: "zlib", Fixed: "2", Priority: findings.High}}

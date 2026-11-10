@@ -48,16 +48,17 @@ func (a *app) showCmd() *cobra.Command {
 				return apperr.New(apperr.FindingsNotFound, cve+" doesn't affect any of your servers (as of the last check)")
 			}
 			sortFindings(matches)
-			top := *matches[0] // a copy: what is looked up here isn't saved
-			a.complete(paths, cfg, &top)
+			subject := headline(matches)
+			top := *subject // a copy: what is looked up here isn't saved
+			loaded := a.complete(paths, cfg, &top)
 			out := make([]showView, len(matches))
 			for i, m := range matches {
-				if i == 0 {
+				if m == subject {
 					m = &top
 				}
 				out[i] = showView{findingView{m, explain.Verdict(m), explain.Why(m)}, explain.Facts(m)}
 			}
-			return a.emit(out, func(w io.Writer) { writeShow(w, &top, matches) })
+			return a.emit(out, func(w io.Writer) { writeShow(w, &top, matches, loaded) })
 		},
 	}
 }
@@ -68,65 +69,101 @@ var lookupCVE = func(ctx context.Context, e *engine.Engine, id string) (*cvelist
 	return e.CVE.Get(ctx, id)
 }
 
-// complete looks up the CVE record when the finding has none: only
-// findings with a fix are looked up during checks. Best effort.
-func (a *app) complete(paths config.Paths, cfg *config.Config, f *findings.Finding) {
-	if f.Kind != findings.KindVulnerability || f.Vector != "" || f.Details != "" {
-		return
+// headline picks the finding mis show is about: the most severe open
+// vulnerability, else an open early warning, else the most severe one.
+func headline(matches []*findings.Finding) *findings.Finding {
+	open := slices.DeleteFunc(slices.Clone(matches), func(f *findings.Finding) bool { return !f.Open() })
+	return cmp.Or(explain.Worst(open), first(open), explain.Worst(matches), matches[0])
+}
+
+func first(fs []*findings.Finding) *findings.Finding {
+	if len(fs) == 0 {
+		return nil
+	}
+	return fs[0]
+}
+
+// complete looks up the CVE record when the finding has none (findings
+// without a fix aren't looked up during checks). It reports whether the
+// facts are there now. Best effort: offline, the page shows what is known.
+func (a *app) complete(paths config.Paths, cfg *config.Config, f *findings.Finding) bool {
+	if f.Vector != "" || f.Details != "" {
+		return true
+	}
+	if f.Kind != findings.KindVulnerability && f.Kind != findings.KindEarlyWarning {
+		return true
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	r, err := lookupCVE(ctx, engine.New(paths, cfg, version, a.log), f.CVE)
 	if err != nil {
-		return
+		a.log.Debug("cve record", "status", "error", "cve", f.CVE, "error", err)
+		return false
 	}
 	f.Vector, f.Weakness, f.Details = r.Vector, r.Weakness, r.Description
 	if f.Score == 0 {
 		f.Score = r.Score
 	}
+	return true
 }
 
+// gutter is where values start in mis show (2 + 26 + 1 columns); values
+// wrap to keep lines within 80 columns.
+const gutter = 29
+
 // writeShow prints the "should I act?" page for one CVE.
-func writeShow(w io.Writer, top *findings.Finding, matches []*findings.Finding) {
+func writeShow(w io.Writer, top *findings.Finding, matches []*findings.Finding, loaded bool) {
 	row := func(label, value string) {
 		if value != "" {
-			_, _ = fmt.Fprintf(w, "  %-26s %s\n", label, value)
+			_, _ = fmt.Fprintf(w, "  %-26s %s\n", label, wrap(value, 80-gutter, strings.Repeat(" ", gutter)))
 		}
 	}
-	_, _ = fmt.Fprintf(w, "%s · %s\n\n", top.CVE, clean(top.Source))
+	_, _ = fmt.Fprintf(w, "%s · %s\n\n", top.CVE, explain.Clean(top.Source))
 	verdict := strings.ToUpper(explain.Verdict(top))
 	if why := explain.Why(top); why != "" {
 		verdict += " — " + why
 	}
-	_, _ = fmt.Fprintf(w, "  %s\n\n", verdict)
+	if !slices.ContainsFunc(matches, (*findings.Finding).Open) {
+		verdict = "FIXED — no open findings for it"
+	}
+	_, _ = fmt.Fprintf(w, "  %s\n\n", wrap(verdict, 78, "  "))
 	for _, fact := range explain.Facts(top) {
 		row(fact.Label, fact.Value)
 	}
 
-	early, fix := false, ""
-	for i, m := range matches {
-		state, fixed := string(m.State), clean(cmp.Or(m.Fixed, "no fix yet"))
+	early, label, fixes := false, "Your servers", []string{}
+	for _, m := range matches {
+		state, fixed := string(m.State), explain.Clean(cmp.Or(m.Fixed, "no fix yet"))
 		if !m.Open() {
 			state = cmp.Or(m.Resolution, "fixed") + " " + m.ResolvedAt.Local().Format("2006-01-02")
 		}
 		if m.Kind == findings.KindEarlyWarning {
 			early, fixed, state = true, "not assessed by your distro yet", "early warning, "+state
 		}
-		label := ""
-		if i == 0 {
-			label = "Your servers"
-		}
-		row(label, fmt.Sprintf("%s  %s %s → %s  [%s]", m.Server, m.Source, m.Installed, fixed, state))
-		if fix == "" && m.Open() && m.HasFix() {
-			fix = "mis fix " + m.Server + " " + m.CVE
+		// One line per server, not wrapped: versions stay readable.
+		_, _ = fmt.Fprintf(w, "  %-26s %s  %s %s → %s  [%s]\n", label, m.Server, explain.Clean(m.Source), explain.Clean(m.Installed), fixed, state)
+		label = ""
+		if m.Open() && m.HasFix() {
+			fix := "mis fix " + m.Server + " " + m.CVE
 			if isAppleSource(m.Source) {
 				fix = "System Settings › General › Software Update"
 			}
+			if !slices.Contains(fixes, fix) {
+				fixes = append(fixes, fix)
+			}
 		}
 	}
-	row("Fix", fix)
-	row("Details", wrap(clean(cmp.Or(top.Details, top.Summary)), 70, strings.Repeat(" ", 29)))
-	row("Weakness", clean(top.Weakness))
+	label = "Fix"
+	for _, fix := range fixes {
+		row(label, fix)
+		label = ""
+	}
+	details := explain.Clean(cmp.Or(top.Details, top.Summary))
+	if details == "" && !loaded {
+		details = "not available: the CVE record couldn't be loaded (offline?)"
+	}
+	row("Details", details)
+	row("Weakness", explain.Clean(top.Weakness))
 	if early {
 		_, _ = fmt.Fprintln(w, "\n  Early warnings come from the CVE List before your distro has assessed the CVE.\n"+
 			"  They're matched by product name, so they may not apply. The distro's verdict replaces them.")
@@ -145,6 +182,9 @@ func isAppleSource(s string) bool { return s == "macos" || s == "safari" }
 // wrap breaks s into lines of at most width characters; lines after the
 // first start with indent.
 func wrap(s string, width int, indent string) string {
+	if len([]rune(s)) <= width {
+		return s // short values keep their spacing
+	}
 	var lines []string
 	cur := ""
 	for _, word := range strings.Fields(s) {

@@ -25,7 +25,8 @@ func cveRecord(id string, score float64, kev bool, products ...string) string {
 		adp = `[{"metrics":[{"other":{"type":"kev","content":{"dateAdded":"2026-11-05"}}}]}]`
 	}
 	return fmt.Sprintf(`{"cveMetadata":{"cveId":%q,"state":"PUBLISHED","datePublished":"2026-11-05T08:00:00Z"},
-		"containers":{"cna":{"title":"test flaw","metrics":[{"cvssV3_1":{"baseScore":%v}}],"affected":[%s]},"adp":%s}}`,
+		"containers":{"cna":{"title":"test flaw","descriptions":[{"lang":"en","value":"A test flaw."}],
+		"metrics":[{"cvssV3_1":{"baseScore":%v,"vectorString":"CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"}}],"affected":[%s]},"adp":%s}}`,
 		id, score, strings.Join(affected, ","), adp)
 }
 
@@ -94,6 +95,9 @@ func TestEarlyWarnings(t *testing.T) {
 	if f.Kind != findings.KindEarlyWarning || f.Source != "openssh" || f.Installed != "1:9.6p1-3ubuntu13.5" ||
 		f.Priority != findings.High || f.Score != 9.8 || f.ID != "web/early-warning/CVE-2026-0001/openssh" {
 		t.Errorf("early warning = %+v", f)
+	}
+	if f.Vector != "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H" || f.Details != "A test flaw." { // so mis show can explain it
+		t.Errorf("early warning facts: vector %q, details %q", f.Vector, f.Details)
 	}
 	state, _ := loadEarlyState(paths)
 	if len(state.Watch) != 2 || state.Watch["CVE-2026-0002"].IsZero() || state.Watch["CVE-2026-0003"].IsZero() {

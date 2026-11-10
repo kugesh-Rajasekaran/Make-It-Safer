@@ -6,8 +6,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -196,6 +198,12 @@ func TestParseRecordVectorAndWeakness(t *testing.T) {
 		{"CWE with its id in the name", `[]`, `[{"descriptions": [{"cweId": "CWE-79", "description": "CWE-79: Cross-site Scripting"}]}]`, "", "CWE-79: Cross-site Scripting"},
 		{"CWE without a name", `[]`, `[{"descriptions": [{"cweId": "CWE-20"}]}]`, "", "CWE-20"},
 		{"text without a CWE id", `[]`, `[{"descriptions": [{"description": "Buffer overflow"}]}]`, "", ""},
+		{"CWE id repeated after the name", `[]`, `[{"descriptions": [{"cweId": "CWE-190", "description": "Integer Overflow or Wraparound CWE-190"}]}]`, "", "CWE-190: Integer Overflow or Wraparound"},
+		{"only other CWE ids", `[]`, `[{"descriptions": [{"cweId": "CWE-787", "description": "(CWE-787|CWE-125)"}]}]`, "", "CWE-787"},
+		{"an arrow to another CWE", `[]`, `[{"descriptions": [{"cweId": "CWE-665", "description": "->CWE-281"}]}]`, "", "CWE-665"},
+		{"hyphens in a name stay", `[]`, `[{"descriptions": [{"cweId": "CWE-787", "description": "Out-of-bounds Write"}]}]`, "", "CWE-787: Out-of-bounds Write"},
+		{"v4 supplemental values", `[{"cvssV4_0": {"baseScore": 9.3, "vectorString": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N/U:Amber"}}]`, `[]`,
+			"CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N/U:Amber", ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -235,4 +243,46 @@ func FuzzParseLog(f *testing.F) {
 			}
 		}
 	})
+}
+
+// A record cached before the vector and weakness were kept is read again;
+// if the CVE List can't be reached, the older copy is still used.
+func TestOlderCachedRecordIsReadAgain(t *testing.T) {
+	data, err := os.ReadFile("testdata/CVE-2024-6387.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	var down atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		if down.Load() {
+			http.Error(w, "gone", http.StatusNotFound)
+			return
+		}
+		_, _ = w.Write(data)
+	}))
+	defer srv.Close()
+	now := time.Now()
+	c := &Client{Feeds: feeds.NewForTest(srv.URL), Base: srv.URL, Cache: t.TempDir(), Now: func() time.Time { return now }}
+	old := `{"id": "CVE-2024-6387", "score": 8.1, "fetched": "` + now.Add(-time.Hour).Format(time.RFC3339) + `"}`
+	path := filepath.Join(c.Cache, "CVE-2024-6387.json")
+	if err := os.WriteFile(path, []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	down.Store(true)
+	r, err := c.Get(context.Background(), "CVE-2024-6387")
+	if err != nil || r.Score != 8.1 || r.Vector != "" {
+		t.Fatalf("offline: the older copy should be used: %+v, %v", r, err)
+	}
+	down.Store(false)
+	r, err = c.Get(context.Background(), "CVE-2024-6387")
+	if err != nil || r.Vector == "" || r.Weakness == "" {
+		t.Fatalf("online: the record should be read again: %+v, %v", r, err)
+	}
+	before := calls.Load()
+	if _, err := c.Get(context.Background(), "CVE-2024-6387"); err != nil || calls.Load() != before {
+		t.Fatalf("the new copy should be used from now on: %v, %d calls", err, calls.Load()-before)
+	}
 }

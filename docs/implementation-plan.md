@@ -100,7 +100,7 @@ For every server you own, always know which vulnerabilities affect it, and be on
 | M8 | Auto-unlock (macOS) | M | restart your Mac and never type the passphrase | ✅ Built · tested on your Mac |
 | M9 | Settings screen | S | change alert scores, reminders and the terminal with `mis config` | ✅ Built · tested in a real terminal |
 | M10 | This computer | L | have the Mac (or Linux desktop) `mis` runs on checked too, from `mis init` | ✅ Built · Mac tested on your Mac; Linux desktop by tests only |
-| M11 | One-line install | S | install or update with one `curl` command, no Go needed | ✅ Built · first release pending |
+| M11 | One-line install | S | install or update with one `curl` command, no Go needed | ✅ Built · v0.1.0 released |
 | M12 | Explain each vulnerability | S | see at a glance whether to act now or later, and why | ✅ Built |
 
 ### M0 · Foundations (S)

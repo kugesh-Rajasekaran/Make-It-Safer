@@ -278,19 +278,19 @@ On a typical server (369 source packages), two days of real CVEs (1,236 records)
 ### 4.6 Notifications
 
 **Why it matters, in plain words** (`internal/explain`). Every vulnerability gets a verdict and one line saying why:
-- **Verdict** from the priority (§4.4): urgent → *Act now*, high → *This week*, normal → *Can wait*, no fix → *No fix yet*. The text can't disagree with the priority.
-- **Why line** (≤ 80 characters) from fixed rules: "being exploited" (CISA KEV); then from the CVSS vector, how it's reached (remotely / local network / local access / physical; login or not; user action) and what it allows (full control / read data / change data / crash it). Without a vector: the source's impact sentence (Apple, CISA), else the distro's rating.
+- **Verdict** from the priority (§4.4): urgent → *Act now*, high → *This week*, normal → *Can wait*, no fix → *No fix yet*, ignored (silent with a fix) → *Ignored*. The text can't disagree with the priority.
+- **Why line** from fixed rules: "being exploited" (CISA KEV) or "attacks likely soon" (EPSS ≥ 10%); then from the CVSS vector, how it's reached (remotely / local network / local access / someone opening a malicious file / physical; login, admin login or none; user action) and what it allows to the affected software (take it over / read data / change data / crash it). It is never cut short. For Apple's software, Apple's "Impact:" sentence comes first. Without a vector: the source's impact sentence (first sentence, ≤ 80 characters, cut at a word), else the distro's rating.
 - **Honest wording:** CVSS "network" means the attack data can arrive over the network, not that the server is reachable from the internet, so it says "can be triggered remotely".
 - **Facts kept per finding** at check time: the CVSS vector, the first CWE and the description from the CVE record, Apple's "Impact:" sentence per CVE, CISA's short description. Display only, cleaned of control and formatting characters.
-- **Shown in** the notification (second line; an Apple update shows "Worst: …" in Apple's words), `mis findings` (verdict column, why on the line below), `mis show` (verdict, what an attacker could do, how it's triggered, being exploited, servers, fix, details, weakness) and the fix banner ("Why: …").
-- `mis show` looks the CVE record up when a finding has none (findings without a fix aren't looked up during checks).
+- **Shown in** the notification (second line; an Apple update shows "Worst: …", the worst fix Apple described, in Apple's words), `mis findings` (verdict column, why on the line below), `mis show` (verdict, what an attacker could do, how it's triggered, severity, being exploited, servers, one fix line per server, details, weakness; wrapped to 80 columns) and the fix banner ("Why: …", naming the CVE when several are listed).
+- `mis show` is about the most severe open finding of the CVE ("FIXED" when none is open), and looks the CVE record up when a finding has none (findings without a fix aren't looked up during checks); offline it says the record couldn't be loaded.
 
 **One notification per CVE, one button per affected server, plus "All servers…".**
 ```
 ┌ Make-It-Safer ───────────────────────────────────────┐
 │ 🔴 CVE-2026-XXXXX · openssh · actively exploited      │
-│ Can be triggered remotely, no login · could gain full │
-│ control                                               │
+│ Can be triggered remotely, no login · could take it   │
+│ over                                                  │
 │ 3 servers affected · fix available                    │
 │ [ovh-web-1]  [ovh-db-1]  [All servers…]               │
 └───────────────────────────────────────────────────────┘
@@ -325,7 +325,7 @@ On a typical server (369 source packages), two days of real CVEs (1,236 records)
 ```
 Make-It-Safer · ovh-web-1
   CVE-2026-XXXXX  openssh  installed 1:9.6p1-3ubuntu13.5 → fixed in 1:9.6p1-3ubuntu13.8  (actively exploited)
-  Why: being exploited · can be triggered remotely, no login · could gain full control
+  Why: being exploited · can be triggered remotely, no login · could take it over
 Enter = run · edit it first · Ctrl-C = skip to a normal shell
 
 ubuntu@ovh-web-1:~$ sudo apt-get update && sudo apt-get install --only-upgrade openssh-server openssh-client▌
@@ -362,7 +362,7 @@ mis config                       every setting in one list: ↑/↓ move, Enter 
 mis config get [name] | set <name> <value>   the same settings for scripts and agents
 mis status                       locked?, last checks, open findings per server
 mis findings [--server X]        what is vulnerable where
-mis show CVE-…                   details, servers, fixed versions
+mis show CVE-…                   act now or later and why, servers, fix, details
 mis check [server]               run checks now
 mis fix <server> [CVE-…]         with a CVE: same as clicking that button; without one: everything fixable on the server
 mis pick CVE-…                   server picker (used by "All servers…")
@@ -397,7 +397,7 @@ There's no cloud sync and no telemetry. `mis doctor` warns if the directory sits
 
 **What is sent:**
 - To `api.osv.dev`: one query per installed source package of the checked servers and of a Linux desktop, with the package name, its version and the OS release as OSV's ecosystem (e.g. `Debian:12`; Ubuntu LTS releases are asked twice, standard and Pro). Then it fetches the records that matched, by ID (for an early warning, also the distro's record of a CVE ID). A Mac's package list is never sent: it is matched against Apple's notes on your computer.
-- To `api.first.org` (EPSS) and `raw.githubusercontent.com` (CVE List): the CVE IDs of findings that can alert (§4.4).
+- To `api.first.org` (EPSS) and `raw.githubusercontent.com` (CVE List): the CVE IDs of findings that can alert (§4.4), and the CVE you ask about with `mis show`.
 - Everything else is a plain download (KEV, endoflife.date for the operating systems you use, Apple's public pages).
 - Not sent: server names, host names, IP addresses, SSH logins, kernel versions.
 - Every request carries `User-Agent: make-it-safer/<version>`, and the service sees your computer's IP address, as with any web request.

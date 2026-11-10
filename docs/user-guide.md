@@ -75,21 +75,22 @@ You mostly do nothing: the background service checks by itself and notifies you.
 
 | Notification | Means | Click |
 |---|---|---|
-| 🔴 / 🟠 **CVE-… · openssh** · "2 servers affected · fix available" | A confirmed vulnerability with a fix. The line above says why it matters (e.g. "Can be triggered remotely, no login · could gain full control"). 🔴 is urgent (actively exploited, or CVSS ≥ 9), reminded every 4 h; 🟠 daily. | A server button opens its fix. "All servers…", or the notification itself, opens a list to pick from. |
+| 🔴 / 🟠 **CVE-… · openssh** · "2 servers affected · fix available" | A confirmed vulnerability with a fix. The line above says why it matters (e.g. "Can be triggered remotely, no login · could take it over"). 🔴 is urgent (actively exploited, or CVSS ≥ 9), reminded every 4 h; 🟠 daily. | A server button opens its fix. "All servers…", or the notification itself, opens a list to pick from. |
 | 🟡 **Heads-up · CVE-… · openssl** | An early warning: a critical new CVE that names software you have, before your distro has confirmed it. No fix yet. | Opens `mis show CVE-…` |
 | ✅ **CVE-… · Fixed on all servers** | Every affected server is fixed. Other notifications end the same way: ✅ "macOS … installed", ✅ "web restarted". A heads-up can also end as ✅ "not affected". | — |
 | **Weekly summary** | Normal-priority updates waiting (not counting ones you snoozed or accepted). | Opens `mis findings` |
 | **Make-It-Safer is locked** | After a restart. See [unlock](#after-a-restart-unlock). | Opens `mis unlock` |
 | **Vulnerability data is getting old** / **Package lists are getting old** | No successful check for a day (offline?), or a server's package list wasn't refreshed for a day (locked service, unreachable server); the notification names the server. | Opens `mis findings` |
 
-**Act now or later?** Each vulnerability has a verdict, shown in `mis findings`, `mis show` and the fix window:
+**Act now or later?** Each vulnerability has a verdict in `mis findings` and `mis show`, and a line saying why (also in the notification and the fix window):
 
 | Verdict | Means |
 |---|---|
-| **Act now** | Urgent: being exploited, or severe and easy to reach |
-| **This week** | High: fix it soon |
-| **Can wait** | Normal: low risk, in the weekly summary |
-| **No fix yet** | Nothing to install yet; you're told when a fix arrives |
+| **Act now** | Urgent: being exploited, or a critical score (9.0 or more) with a fix |
+| **This week** | High: a high score, or attacks likely soon |
+| **Can wait** | Normal: lower risk, in the weekly summary |
+| **No fix yet** | Nothing to install yet; once a fix arrives it gets its own verdict |
+| **Ignored** | It matches your ignore list (`rules.ignore`) |
 
 The line under it says why, in plain words. "Can be triggered remotely" means the attack can arrive over the network; `mis` can't see your firewall, so it doesn't claim your server is exposed.
 

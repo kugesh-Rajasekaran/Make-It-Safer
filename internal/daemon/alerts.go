@@ -207,10 +207,10 @@ func (d *Daemon) groupNotification(key string, group []*findings.Finding, fixed 
 			n.Title += fmt.Sprintf(" · %d actively exploited", exploited)
 		}
 		n.Body = "Install it in System Settings › Software Update."
-		if w := explain.Worst(group); w != nil {
-			if worst := cmp.Or(explain.Impact(w), explain.Risk(w)); worst != "" {
-				n.Body = "Worst: " + worst + "\n" + n.Body
-			}
+		// The worst fix in Apple's own words, among those Apple described.
+		described := slices.DeleteFunc(slices.Clone(group), func(f *findings.Finding) bool { return f.Impact == "" })
+		if w := explain.Worst(described); w != nil {
+			n.Body = "Worst: " + explain.Impact(w) + "\n" + n.Body
 		}
 		n.Buttons = []notify.Button{{ID: "fix:" + group[0].Server, Title: config.LocalLabel()}}
 		return n

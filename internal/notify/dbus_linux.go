@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -112,6 +113,19 @@ func (d *DBus) handle(s *dbus.Signal) {
 	}
 }
 
+// markup escapes what a notification server that reads body markup would
+// otherwise take as tags or entities.
+var markup = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
+
+// bodyText is the body as the server should get it: escaped when it reads
+// markup (feed text such as CISA's description can contain < and &).
+func bodyText(caps []string, body string) string {
+	if slices.Contains(caps, "body-markup") {
+		return markup.Replace(body)
+	}
+	return body
+}
+
 // Show shows or replaces a notification.
 func (d *DBus) Show(n Notification) error {
 	actions := []string{Default, "Open"} // a click on the notification itself
@@ -138,7 +152,7 @@ func (d *DBus) Show(n Notification) error {
 	ctx, cancel := context.WithTimeout(context.Background(), callTimeout)
 	defer cancel()
 	var id uint32
-	err := d.obj.CallWithContext(ctx, busPrefix+"Notify", 0, "Make-It-Safer", replaces, "dialog-warning", n.Title, n.Body, actions, hints, int32(0)).Store(&id)
+	err := d.obj.CallWithContext(ctx, busPrefix+"Notify", 0, "Make-It-Safer", replaces, "dialog-warning", n.Title, bodyText(d.caps, n.Body), actions, hints, int32(0)).Store(&id)
 	if err != nil {
 		return apperr.Wrap(apperr.NotifyUnavailable, err, "cannot show a notification")
 	}

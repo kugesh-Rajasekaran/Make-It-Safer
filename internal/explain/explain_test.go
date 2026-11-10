@@ -19,7 +19,7 @@ func TestVerdict(t *testing.T) {
 		{vuln(findings.Urgent, "2"), "Act now"},
 		{vuln(findings.High, "2"), "This week"},
 		{vuln(findings.Normal, "2"), "Can wait"},
-		{vuln(findings.Silent, "2"), "Low risk"},
+		{vuln(findings.Silent, "2"), "Ignored"},
 		{vuln(findings.Urgent, ""), "No fix yet"},
 		{&findings.Finding{Kind: findings.KindEarlyWarning, Priority: findings.High}, "Heads-up"},
 		{&findings.Finding{Kind: findings.KindReboot, Priority: findings.High}, "This week"},
@@ -38,19 +38,30 @@ func TestWhy(t *testing.T) {
 		want string
 	}{
 		{"remote takeover, exploited (v3.1)", findings.Finding{KEV: true, Vector: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"},
-			"being exploited · can be triggered remotely, no login · could gain full control"},
+			"being exploited · can be triggered remotely, no login · could take it over"},
+		{"the effect is never cut", findings.Finding{KEV: true, Vector: "CVSS:3.1/AV:A/AC:L/PR:H/UI:R/S:U/C:N/I:H/A:H"},
+			"being exploited · from the local network, needs an admin login, needs user action · could change data or crash it"},
 		{"local read with a login (v3.0)", findings.Finding{Vector: "CVSS:3.0/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N"},
 			"needs local access, needs a login · could read data"},
-		{"crafted file (v3.1)", findings.Finding{Vector: "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:N/A:H"},
+		{"local without a login says nothing about logins", findings.Finding{Vector: "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"},
+			"needs local access · could read data"},
+		{"a malicious file someone opens", findings.Finding{Vector: "CVSS:3.1/AV:L/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:H"},
+			"needs someone to open a malicious file · could take it over"},
+		{"remote with user action (v3.1)", findings.Finding{Vector: "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:N/A:H"},
 			"can be triggered remotely, no login, needs user action · could crash it"},
-		{"v4.0 with active user", findings.Finding{Vector: "CVSS:4.0/AV:A/AC:L/AT:N/PR:N/UI:A/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N"},
+		{"v4.0 with supplemental metrics", findings.Finding{Vector: "CVSS:4.0/AV:A/AC:L/AT:N/PR:N/UI:A/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N/U:Amber"},
 			"from the local network, no login, needs user action · could read or change data"},
-		{"low impact only", findings.Finding{Vector: "CVSS:3.1/AV:P/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"},
-			"needs physical access, no login · limited impact"},
-		{"Apple impact, no vector", findings.Finding{Impact: "An app may be able to gain root privileges."},
+		{"likely attacks", findings.Finding{EPSS: 0.4, Vector: "CVSS:3.1/AV:P/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N"},
+			"attacks likely soon · needs physical access · limited impact"},
+		{"Apple's words for Apple software", findings.Finding{Source: "macos", Vector: "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H",
+			Impact: "An app may be able to gain root privileges. Apple is aware of a report that this issue may have been exploited."},
 			"An app may be able to gain root privileges"},
+		{"CISA's words without a vector", findings.Finding{KEV: true, Impact: "Example Server contains an injection flaw."},
+			"being exploited · Example Server contains an injection flaw"},
 		{"distro rating only", findings.Finding{DistroPriority: "medium"}, "rated medium by the distro"},
-		{"garbled vector falls back", findings.Finding{Vector: "AV:N; rm -rf /", DistroPriority: "low"}, "rated low by the distro"},
+		{"minor distro rating", findings.Finding{DistroPriority: "unimportant"}, "minor, says the distro"},
+		{"unhelpful distro rating", findings.Finding{DistroPriority: "not yet assigned"}, ""},
+		{"garbled vector falls back", findings.Finding{Vector: "CVSS:3.1/AV:Q/C:H", DistroPriority: "low"}, "rated low by the distro"},
 		{"nothing known", findings.Finding{}, ""},
 		{"feed text is cleaned", findings.Finding{Impact: "An app\u202e may\x1b[31m crash.\n"}, "An app may [31m crash"},
 	}
@@ -61,20 +72,21 @@ func TestWhy(t *testing.T) {
 			}
 		})
 	}
-	long := findings.Finding{KEV: true, Impact: strings.Repeat("word ", 40)}
-	if got := []rune(Why(&long)); len(got) != MaxWhy || got[MaxWhy-1] != '…' {
-		t.Errorf("long why: %d runes", len(got))
+	long := findings.Finding{Impact: "An app may be able to " + strings.Repeat("do something ", 20)}
+	if got := Impact(&long); len([]rune(got)) > MaxImpact || !strings.HasPrefix(long.Impact, strings.TrimSuffix(got, "…")+" ") {
+		t.Errorf("long impact is cut at a word: %q", got)
 	}
 }
 
 func TestFacts(t *testing.T) {
-	f := &findings.Finding{Vector: "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H", EPSS: 0.094}
-	got := Facts(f)
+	f := &findings.Finding{Vector: "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H", Score: 8.1, EPSS: 0.094}
 	want := []Fact{
-		{"What an attacker could do", "Could gain full control"},
+		{"What an attacker could do", "Could take it over"},
 		{"How it's triggered", "Can be triggered remotely, no login · no user action · hard to pull off"},
-		{"Being exploited?", "No known attacks · 9% chance of attacks in the next 30 days (EPSS)"},
+		{"Severity", "CVSS 8.1 of 10"},
+		{"Being exploited?", "Not on CISA's list of exploited vulnerabilities · 9% chance of attacks in the next 30 days (EPSS)"},
 	}
+	got := Facts(f)
 	if len(got) != len(want) {
 		t.Fatalf("facts = %+v", got)
 	}
@@ -84,9 +96,13 @@ func TestFacts(t *testing.T) {
 		}
 	}
 
-	mac := Facts(&findings.Finding{KEV: true, Impact: "An app may be able to read kernel memory."})
-	if len(mac) != 2 || mac[0].Value != "An app may be able to read kernel memory" || !strings.HasPrefix(mac[1].Value, "Yes: on CISA's list") {
+	mac := Facts(&findings.Finding{Source: "safari", KEV: true, Impact: "An app may be able to read kernel memory.", DistroPriority: "high"})
+	if len(mac) != 3 || mac[0].Value != "An app may be able to read kernel memory" || mac[1].Value != "Rated high by the distro" ||
+		!strings.HasPrefix(mac[2].Value, "Yes: on CISA's list") {
 		t.Errorf("mac facts = %+v", mac)
+	}
+	if low := Facts(&findings.Finding{EPSS: 0.001}); low[0].Value != "Not on CISA's list of exploited vulnerabilities · under 1% chance of attacks in the next 30 days (EPSS)" {
+		t.Errorf("tiny EPSS = %+v", low)
 	}
 }
 
@@ -98,10 +114,13 @@ func TestWorstAndImpact(t *testing.T) {
 	if got := Worst([]*findings.Finding{reboot, high, exploited}); got != exploited {
 		t.Errorf("Worst = %+v", got)
 	}
-	if Worst([]*findings.Finding{reboot}) != nil || Why(nil) != "" || Impact(nil) != "" {
-		t.Error("no vulnerability: nil worst, empty why and impact")
+	if Worst([]*findings.Finding{reboot}) != nil || Why(nil) != "" || Impact(nil) != "" || Risk(nil) != "" {
+		t.Error("no vulnerability: nil worst, empty why, risk and impact")
 	}
 	if got := Impact(exploited); got != "An app may be able to gain root privileges" {
 		t.Errorf("Impact = %q", got)
+	}
+	if got := Clean("a\u200bb\u202ec\nd"); got != "a b c d" {
+		t.Errorf("Clean = %q", got)
 	}
 }

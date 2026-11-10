@@ -79,7 +79,9 @@ func clean(s string) string {
 		if r == '\n' || r == '\t' {
 			return r
 		}
-		if unicode.IsControl(r) || r == unicode.ReplacementChar {
+		// Control characters, and invisible ones that can reorder or hide
+		// text (bidi overrides, zero-width), never reach the terminal.
+		if unicode.IsControl(r) || r == unicode.ReplacementChar || unicode.Is(unicode.Cf, r) || r == '\u2028' || r == '\u2029' {
 			return -1
 		}
 		return r
