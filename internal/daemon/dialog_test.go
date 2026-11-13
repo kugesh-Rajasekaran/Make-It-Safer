@@ -159,3 +159,21 @@ func TestDialog(t *testing.T) {
 		t.Fatalf("fallback: dialogs %d, notifications %+v (an error?)", len(rec.opened), rec.shown)
 	}
 }
+
+// Feed text can't add lines or invisible characters to the dialog: the fix
+// notes name the CVE, which comes from a feed.
+func TestDialogCleansFeedText(t *testing.T) {
+	paths := twoServers(t)
+	cve := "CVE-2024-6387\u202e\n\nInjected"
+	_ = findings.Update(paths, func(st *findings.Store) error {
+		st.Merge("db", []*findings.Finding{{ID: findings.MakeID("db", findings.KindVulnerability, "x/openssh"), Server: "db",
+			Kind: findings.KindVulnerability, CVE: cve, Source: "openssh", Installed: "1", Fixed: "2", ProOnly: true, Priority: findings.High}},
+			[]findings.Kind{findings.KindVulnerability}, time.Now())
+		return nil
+	})
+	d := New(paths, "test", slog.New(slog.NewTextHandler(io.Discard, nil)), newRecorder())
+	dg, err := d.dialog("cve:" + cve)
+	if err != nil || strings.Count(dg.Fix, "\n") != 1 || strings.ContainsRune(dg.Fix+dg.Title, '\u202e') || !strings.Contains(dg.Fix, "CVE-2024-6387 Injected comes from Ubuntu Pro") {
+		t.Fatalf("dialog = %+v, %v", dg, err)
+	}
+}

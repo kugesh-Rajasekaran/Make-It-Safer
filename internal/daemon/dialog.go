@@ -59,7 +59,7 @@ func (d *Daemon) dialog(key string) (*notify.Dialog, error) {
 		update, described := apple(group)
 		worst := cmp.Or(described, w) // in Apple's own words when it described one
 		dg.Title, dg.Fix, button = explain.Clean(update), "Install it in System Settings › Software Update.", "Open Software Update"
-		dg.Facts = append([]explain.Fact{{Label: "Worst of them", Value: worst.CVE}}, explain.Facts(worst)...)
+		dg.Facts = append([]explain.Fact{{Label: "Worst of them", Value: explain.Clean(worst.CVE)}}, explain.Facts(worst)...)
 	case w.Kind == findings.KindEarlyWarning:
 		dg.Fix, button = "Not confirmed by your distro yet. Make-It-Safer tells you once it is, with the fix.", ""
 	case w.Kind == findings.KindReboot:
@@ -74,7 +74,10 @@ func (d *Daemon) dialog(key string) (*notify.Dialog, error) {
 		r := notify.Row{Name: serverLabel(server), Detail: change(group, server), Opened: opened[server]}
 		if inv, err := inventory.Load(d.paths, server); err == nil && button != "" {
 			if _, cmd, err := fixFor(inv, st, server, key); err == nil && !cmd.Empty() {
-				r.Command, notes = cmd.Sudo, append(notes, cmd.Notes...)
+				r.Command = cmd.Sudo
+				for _, n := range cmd.Notes {
+					notes = append(notes, explain.Clean(n)) // they name the CVE, which comes from a feed
+				}
 			}
 			if inv.IsMac() || r.Command != "" {
 				r.Button = &notify.Button{ID: "fix:" + server, Title: button}

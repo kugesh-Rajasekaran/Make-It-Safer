@@ -40,14 +40,18 @@ final class Dialogs: NSObject, NSWindowDelegate {
     }
 
     // Opens the dialog, or updates it in place when it is already open. A
-    // refresh (after one of its buttons) only updates an open window and
-    // leaves it behind the terminal the button just opened.
+    // refresh (after one of its buttons) only updates an open window, keeps where
+    // it was scrolled to and leaves it behind the terminal the button opened.
     func show(_ dialog: Dialog) {
         let refresh = dialog.refresh == true
         if refresh && windows[dialog.id] == nil {
             return // closed meanwhile
         }
         let window = windows[dialog.id] ?? makeWindow(dialog.id)
+        var fromTop: CGFloat = 0 // where an open one was scrolled to (not flipped: y grows upwards)
+        if let old = window.contentView as? NSScrollView, let doc = old.documentView {
+            fromTop = doc.frame.height - old.contentView.bounds.maxY
+        }
         let content = view(dialog) { [weak window] in window?.close() }
         let size = content.fittingSize
         content.frame = NSRect(origin: .zero, size: size)
@@ -55,13 +59,15 @@ final class Dialogs: NSObject, NSWindowDelegate {
         let scroll = NSScrollView()
         scroll.documentView = content
         scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true
         scroll.drawsBackground = false
         window.contentView = scroll
         let screen = (window.screen ?? NSScreen.main)?.visibleFrame.height ?? 800
         let height = min(size.height, screen * 0.8)
-        let scroller = height < size.height ? NSScroller.scrollerWidth(for: .regular, scrollerStyle: scroll.scrollerStyle) : 0
+        let legacy = height < size.height && scroll.scrollerStyle == .legacy // overlay scrollers take no room
+        let scroller = legacy ? NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy) : 0
         window.setContentSize(NSSize(width: size.width + scroller, height: height))
-        scroll.contentView.scroll(to: NSPoint(x: 0, y: size.height - height)) // the top (not flipped)
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: max(0, size.height - height - fromTop)))
         scroll.reflectScrolledClipView(scroll.contentView)
         if refresh {
             return

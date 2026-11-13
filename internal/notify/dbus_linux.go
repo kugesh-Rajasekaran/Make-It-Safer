@@ -221,11 +221,16 @@ func (d *DBus) ShowDialog(dl Dialog) error {
 		}
 		d.mu.Unlock()
 		cancel()
+		action := zenityAction(dl, out.String())
 		var exit *exec.ExitError
-		if err != nil && !replaced && (!errors.As(err, &exit) || exit.ExitCode() != 1) {
+		switch {
+		case replaced || err == nil:
+		case !errors.As(err, &exit) || exit.ExitCode() != 1:
 			d.log.Warn("dialog", "status", "zenity failed", "id", dl.ID, "error", err, "stderr", strings.TrimSpace(stderr.String()))
+		case action == "" && stderr.Len() > 0: // closed, or GTK couldn't open a window (it exits with 1 too)
+			d.log.Info("dialog", "status", "closed", "id", dl.ID, "stderr", strings.TrimSpace(stderr.String()))
 		}
-		if action := zenityAction(dl, out.String()); action != "" && !replaced {
+		if action != "" && !replaced {
 			d.events <- Event{NotificationID: dl.ID, Action: action, FromDialog: true}
 		}
 	}()

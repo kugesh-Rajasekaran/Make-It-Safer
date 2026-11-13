@@ -291,7 +291,7 @@ Goal: design §4.6 "Dialog". Branch: `feat/notification-dialog`.
 
 | ID | Task | Done when |
 |---|---|---|
-| T-1300 | `feat(daemon)` build the dialog for vulnerability, heads-up, restart and Apple groups (facts, fix, command, a row per server); a click on the notification or "All servers…" opens it, its buttons open the fix and mark ✓ 🔒 | Tests: content, ✓ without re-posting the notification, per-server commands, no button without a command, terminal fallback |
+| T-1300 | `feat(daemon)` build the dialog for vulnerability, heads-up, restart and Apple groups (facts, fix, command, a row per server); a click on the notification or "All servers…" opens it, its buttons open the fix and mark ✓ 🔒 | Tests: content, ✓ in the dialog and the re-posted notification, feed text cleaned, per-server commands, no button without a command, terminal fallback |
 | T-1301 | `feat(notify)` macOS: `dialog` message to the helper app and an AppKit window; Linux: `zenity --no-markup` 🔒 | Protocol test; zenity text, arguments and button mapping tests |
 | T-1302 | `feat(doctor)` warn on Linux when zenity is missing | Test |
 
