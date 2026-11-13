@@ -57,28 +57,24 @@ func (d *Daemon) dialog(key string) (*notify.Dialog, error) {
 	switch {
 	case isApple(w):
 		update, described := apple(group)
+		worst := cmp.Or(described, w) // in Apple's own words when it described one
 		dg.Title, dg.Fix, button = explain.Clean(update), "Install it in System Settings › Software Update.", "Open Software Update"
-		if described != nil {
-			dg.Facts = explain.Facts(described) // in Apple's own words
-		}
+		dg.Facts = append([]explain.Fact{{Label: "Worst of them", Value: worst.CVE}}, explain.Facts(worst)...)
 	case w.Kind == findings.KindEarlyWarning:
-		dg.Fix, button = "No fix from your distro yet. Make-It-Safer tells you when there is one.", ""
+		dg.Fix, button = "Not confirmed by your distro yet. Make-It-Safer tells you once it is, with the fix.", ""
 	case w.Kind == findings.KindReboot:
 		dg.Facts, button = []explain.Fact{{Label: "Why", Value: explain.Capitalize(explain.Clean(w.Summary))}}, "Restart"
-	}
-	if dg.Fix == "" {
-		dg.Fix = button + " opens your terminal with this typed in (over SSH for a server). Nothing runs until you press Enter."
 	}
 
 	d.mu.Lock()
 	opened := maps.Clone(d.clicked[key]) // fix() writes the inner map; a nil map reads as empty
 	d.mu.Unlock()
+	var notes []string // e.g. Ubuntu Pro, restart afterwards
 	for _, server := range servers(group) {
 		r := notify.Row{Name: serverLabel(server), Detail: change(group, server), Opened: opened[server]}
 		if inv, err := inventory.Load(d.paths, server); err == nil && button != "" {
-			_, cmd, err := fixFor(inv, st, server, key)
-			if err == nil {
-				r.Command = cmd.Sudo
+			if _, cmd, err := fixFor(inv, st, server, key); err == nil && !cmd.Empty() {
+				r.Command, notes = cmd.Sudo, append(notes, cmd.Notes...)
 			}
 			if inv.IsMac() || r.Command != "" {
 				r.Button = &notify.Button{ID: "fix:" + server, Title: button}
@@ -86,6 +82,14 @@ func (d *Daemon) dialog(key string) (*notify.Dialog, error) {
 		}
 		dg.Rows = append(dg.Rows, r)
 	}
+	if dg.Fix == "" {
+		dg.Fix = button + " opens your terminal with this typed in (over SSH for a server). Nothing runs until you press Enter."
+		if !slices.ContainsFunc(dg.Rows, func(r notify.Row) bool { return r.Button != nil }) {
+			dg.Fix = "No fix from your distro yet. Make-It-Safer tells you when there is one."
+		}
+	}
+	slices.Sort(notes)
+	dg.Fix = strings.Join(append([]string{dg.Fix}, slices.Compact(notes)...), "\n")
 	if !slices.ContainsFunc(dg.Rows, func(r notify.Row) bool { return r.Command != dg.Rows[0].Command }) {
 		dg.Command = dg.Rows[0].Command // the same everywhere: shown once, under the fix
 		for i := range dg.Rows {
@@ -111,7 +115,8 @@ func servers(fs []*findings.Finding) []string {
 }
 
 // change says what the fix changes on server, e.g. "openssl
-// 3.0.13-0ubuntu3.4 → 3.0.13-0ubuntu3.5"; for a restart, what runs now.
+// 3.0.13-0ubuntu3.4 → 3.0.13-0ubuntu3.5"; for a restart, what runs now; for
+// a heads-up, what may be affected.
 func change(group []*findings.Finding, server string) string {
 	var parts []string
 	for _, f := range group {
@@ -123,8 +128,11 @@ func change(group []*findings.Finding, server string) string {
 			name = map[string]string{"macos": "macOS", "safari": "Safari"}[f.Source]
 		}
 		part := name + " " + f.Installed + " → " + cmp.Or(f.Fixed, "no fix yet")
-		if f.Kind == findings.KindReboot {
+		switch f.Kind {
+		case findings.KindReboot:
 			part = "running kernel " + f.Installed
+		case findings.KindEarlyWarning:
+			part = "may be affected: " + name + " " + f.Installed
 		}
 		parts = append(parts, explain.Clean(part))
 	}

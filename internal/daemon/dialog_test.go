@@ -81,11 +81,10 @@ func TestDialog(t *testing.T) {
 	key := "cve:CVE-2024-6387"
 
 	// A click on the notification opens its dialog; an Update button there
-	// opens the fix and updates the dialog with a ✓, and the notification
-	// doesn't pop up again.
+	// opens the fix and updates the dialog and the notification with a ✓.
 	d.onClick(notify.Event{NotificationID: key, Action: notify.Default})
 	d.onClick(notify.Event{NotificationID: key, Action: "fix:web", FromDialog: true})
-	if len(rec.opened) != 2 || len(rec.shown) != 0 || rec.opened[0].Refresh || !rec.opened[1].Refresh {
+	if len(rec.opened) != 2 || len(rec.shown) != 1 || rec.shown[0].ID != key || rec.opened[0].Refresh || !rec.opened[1].Refresh {
 		t.Fatalf("dialogs %+v, notifications %+v", rec.opened, rec.shown)
 	}
 	dg := rec.opened[1]
@@ -115,6 +114,25 @@ func TestDialog(t *testing.T) {
 		t.Fatalf("no fix yet: %s, %v", rows(*dg), err)
 	}
 
+	// web's fix comes from Ubuntu Pro: the dialog says so. Then no fix
+	// anywhere: no "Update opens…" either.
+	setWeb := func(fixed string, pro bool) {
+		_ = findings.Update(paths, func(st *findings.Store) error {
+			st.Merge("web", []*findings.Finding{{ID: findings.MakeID("web", findings.KindVulnerability, "CVE-2024-6387/openssh"), Server: "web",
+				Kind: findings.KindVulnerability, CVE: "CVE-2024-6387", Source: "openssh", Installed: "1", Fixed: fixed, ProOnly: pro, Priority: findings.High}},
+				[]findings.Kind{findings.KindVulnerability}, time.Now())
+			return nil
+		})
+	}
+	setWeb("2", true)
+	if dg, err := d.dialog(key); err != nil || !strings.Contains(dg.Fix, "until you press Enter.\nThe fix for CVE-2024-6387 comes from Ubuntu Pro") {
+		t.Fatalf("Pro note: %q, %v", dg.Fix, err)
+	}
+	setWeb("", false)
+	if dg, err := d.dialog(key); err != nil || dg.Fix != "No fix from your distro yet. Make-It-Safer tells you when there is one." {
+		t.Fatalf("no fix anywhere: %q, %v", dg.Fix, err)
+	}
+
 	// A restart, and a heads-up (no fix yet: no buttons).
 	_ = findings.Update(paths, func(st *findings.Store) error {
 		st.Merge("web", []*findings.Finding{
@@ -129,15 +147,15 @@ func TestDialog(t *testing.T) {
 		rows(*dg) != "web|running kernel 6.8|fix:web=Restart|false|" {
 		t.Fatalf("restart dialog = %+v, %v", dg, err)
 	}
-	if dg, err := d.dialog("early-warning:CVE-2026-0001"); err != nil || dg.Verdict != "Heads-up" || !strings.HasPrefix(dg.Fix, "No fix") ||
-		rows(*dg) != "web|openssh 1 → no fix yet||false|" {
+	if dg, err := d.dialog("early-warning:CVE-2026-0001"); err != nil || dg.Verdict != "Heads-up" || !strings.HasPrefix(dg.Fix, "Not confirmed") ||
+		rows(*dg) != "web|may be affected: openssh 1||false|" {
 		t.Fatalf("heads-up dialog = %+v, %v", dg, err)
 	}
 
 	// Without dialogs (no zenity), the click opens the terminal as before.
 	rec.fail = true
 	d.onClick(notify.Event{NotificationID: key, Action: notify.Default})
-	if len(rec.opened) != 2 || len(rec.shown) != 0 {
+	if len(rec.opened) != 2 || len(rec.shown) != 1 {
 		t.Fatalf("fallback: dialogs %d, notifications %+v (an error?)", len(rec.opened), rec.shown)
 	}
 }

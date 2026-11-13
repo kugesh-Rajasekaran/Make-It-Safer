@@ -88,8 +88,10 @@ var openSoftwareUpdate = func() error {
 	return nil
 }
 
-// fix opens the fix for one server, marks its button ✓ (in the dialog when
-// the click came from there) and checks the server again over the next hour.
+// fix opens the fix for one server, marks its button ✓ (in the
+// notification, which is also the way back to a dialog now behind the
+// terminal, and in the dialog when the click came from there) and checks the
+// server again over the next hour.
 func (d *Daemon) fix(server, key string, fromDialog bool) error {
 	cfg, err := config.Load(d.paths.Config)
 	if err != nil {
@@ -100,10 +102,11 @@ func (d *Daemon) fix(server, key string, fromDialog bool) error {
 	}
 	if key != "" {
 		d.markClicked(key, server)
+		d.reshow(key, cfg)
 		if fromDialog {
-			_ = d.showDialog(key, true)
-		} else {
-			d.reshow(key, cfg)
+			if err := d.showDialog(key, true); err != nil {
+				d.log.Info("dialog", "status", "not refreshed", "id", key, "error", err)
+			}
 		}
 	}
 	d.followUp(server)
