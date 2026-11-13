@@ -98,6 +98,11 @@ func TestDesktop(t *testing.T) {
 	want(t, "none", Desktop([]string{"HOME=/home/me", "XDISPLAY=x"}), Warn, "doesn't see your desktop")
 }
 
+func TestDialogs(t *testing.T) {
+	want(t, "zenity", Dialogs(true), OK, "opens its details")
+	want(t, "no zenity", Dialogs(false), Warn, "opens the terminal instead")
+}
+
 func TestReachable(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/down" {

@@ -64,7 +64,7 @@ func (d *Daemon) alert(res *engine.Result) {
 			if !shown {
 				continue // never shown, so nothing to update
 			}
-			open := slices.DeleteFunc(slices.Clone(st.Findings), func(f *findings.Finding) bool { return !f.Open() || groupKey(f) != key })
+			open := openGroup(st, key)
 			if len(open) > 0 { // some servers fixed: show the progress
 				n := d.groupNotification(key, open, fixedServers(st, key, now), cfg)
 				n.Sound = false
@@ -144,7 +144,7 @@ func (d *Daemon) remind() error {
 			}
 		}
 		for key := range due {
-			group := slices.DeleteFunc(slices.Clone(st.Findings), func(f *findings.Finding) bool { return !f.Open() || groupKey(f) != key })
+			group := openGroup(st, key)
 			if err := d.notifier.Show(d.groupNotification(key, group, fixedServers(st, key, now), cfg)); err != nil {
 				d.log.Warn("remind", "status", "error", "group", key, "error", err)
 				continue // it's due again at the next pass; the groups already shown are still recorded
@@ -196,21 +196,11 @@ func (d *Daemon) groupNotification(key string, group []*findings.Finding, fixed 
 		return n
 	}
 	if isApple(group[0]) { // one notification per Apple update, not per CVE
-		exploited := 0
-		for _, f := range group {
-			if f.KEV {
-				exploited++
-			}
-		}
-		n.Title = fmt.Sprintf("%s %s · fixes %d %s", icons[top], appleUpdate(group[0]), len(group), pluralWord(len(group), "vulnerability", "vulnerabilities"))
-		if exploited > 0 {
-			n.Title += fmt.Sprintf(" · %d actively exploited", exploited)
-		}
+		update, worst := apple(group)
+		n.Title = icons[top] + " " + update
 		n.Body = "Install it in System Settings › Software Update."
-		// The worst fix in Apple's own words, among those Apple described.
-		described := slices.DeleteFunc(slices.Clone(group), func(f *findings.Finding) bool { return f.Impact == "" })
-		if w := explain.Worst(described); w != nil {
-			n.Body = "Worst: " + explain.Impact(w) + "\n" + n.Body
+		if worst != nil {
+			n.Body = "Worst: " + explain.Impact(worst) + "\n" + n.Body
 		}
 		n.Buttons = []notify.Button{{ID: "fix:" + group[0].Server, Title: config.LocalLabel()}}
 		return n
@@ -297,6 +287,24 @@ func serverLabel(server string) string {
 // isApple reports a vulnerability on this Mac, found in Apple's notes.
 func isApple(f *findings.Finding) bool {
 	return f.Kind == findings.KindVulnerability && f.Server == config.LocalName() && (f.Source == "macos" || f.Source == "safari")
+}
+
+// apple describes an Apple update's group: its title, e.g. "macOS 15.8.2 ·
+// fixes 3 vulnerabilities · 1 actively exploited", and its worst fix among
+// those Apple described in its own words (nil if none).
+func apple(group []*findings.Finding) (string, *findings.Finding) {
+	exploited := 0
+	for _, f := range group {
+		if f.KEV {
+			exploited++
+		}
+	}
+	title := fmt.Sprintf("%s · fixes %d %s", appleUpdate(group[0]), len(group), pluralWord(len(group), "vulnerability", "vulnerabilities"))
+	if exploited > 0 {
+		title += fmt.Sprintf(" · %d actively exploited", exploited)
+	}
+	described := slices.DeleteFunc(slices.Clone(group), func(f *findings.Finding) bool { return f.Impact == "" })
+	return title, explain.Worst(described)
 }
 
 // appleUpdate names the update that fixes an Apple finding, e.g. "macOS 15.8.2".

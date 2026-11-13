@@ -265,7 +265,7 @@ rules:
    - Skipped: language-registry packages (npm, PyPI, …), CMS plugins and themes, and other operating systems.
 5. **Skip it if the distro already has a record** (`UBUNTU-CVE-…`, `DEBIAN-CVE-…` on OSV), or the server already has a finding for that CVE. The regular check handles those.
 6. **Not severe yet, or no product named yet?** Watch it for 7 days: CISA often adds scores, products and KEV status to the record later, and every change to a watched CVE is read again.
-7. **Notify once:** 🟡 *"Heads-up · CVE-… · openssh"*, *"Not confirmed by your distro yet · may affect 2 servers · CVSS 9.8 · no fix yet"*. It has no buttons, because there is no fix command yet. Clicking it opens `mis show CVE-…`. It is never reminded.
+7. **Notify once:** 🟡 *"Heads-up · CVE-… · openssh"*, *"Not confirmed by your distro yet · may affect 2 servers · CVSS 9.8 · no fix yet"*. It has no buttons, because there is no fix command yet. Clicking it opens its dialog (§4.6), or `mis show CVE-…` without one. It is never reminded.
 8. **It ends at the next regular check** after the distro speaks:
    - **Confirmed:** a vulnerability finding exists for the server and CVE. The heads-up is removed and the normal alert takes over.
    - **Not affected:** the distro has a record, but OSV doesn't report it for the installed version. You get ✅ *"not affected"*.
@@ -282,7 +282,7 @@ On a typical server (369 source packages), two days of real CVEs (1,236 records)
 - **Why line** from fixed rules: "being exploited" (CISA KEV), or "N% chance of attacks soon" when EPSS (≥ 10%) made the finding high or urgent; then from the CVSS vector, how it's reached (remotely / local network / local access / someone opening a malicious file / physical; login, admin login or none; user action) and what it allows to the affected software (take it over / read data / change data / crash it). It is never cut short. For Apple's software, Apple's "Impact:" sentence comes first. Without a vector: the source's impact sentence (first sentence; ≤ 80 characters, cut at a word, in one-line places; whole in `mis show`), else the distro's rating.
 - **Honest wording:** CVSS "network" means the attack data can arrive over the network, not that the server is reachable from the internet, so it says "can be triggered remotely".
 - **Facts kept per finding** at check time: the CVSS vector, the first CWE and the description from the CVE record, Apple's "Impact:" sentence per CVE, CISA's short description. Display only, cleaned of control and formatting characters.
-- **Shown in** the notification (second line; an Apple update shows "Worst: …", the worst fix Apple described, in Apple's words), `mis findings` (verdict column, why on the line below), `mis show` (verdict, what an attacker could do, how it's triggered, severity, being exploited, servers, one fix line per server, details, weakness; wrapped to 80 columns) and the fix banner ("Why: …", naming the CVE when several are listed).
+- **Shown in** the notification (second line; an Apple update shows "Worst: …", the worst fix Apple described, in Apple's words), `mis findings` (verdict column, why on the line below), `mis show` (verdict, what an attacker could do, how it's triggered, severity, being exploited, servers, one fix line per server, details, weakness; wrapped to 80 columns) and the fix banner ("Why: …", naming the CVE when several are listed) and the dialog (below).
 - `mis show` is about the most severe open finding of the CVE ("FIXED" when none is open), and looks the CVE record up when a finding has none (findings without a fix aren't looked up during checks); offline it says the record couldn't be loaded.
 
 **One notification per CVE, one button per affected server, plus "All servers…".**
@@ -302,10 +302,13 @@ On a typical server (369 source packages), two days of real CVEs (1,236 records)
 | Stays on screen | User must pick **Alerts** style. Onboarding checks and guides you. | `urgency=critical` + `resident=true` hint (GNOME, KDE) |
 | Button click keeps it open | macOS closes it on click → daemon **re-posts it at once** with `✓` on that server | `resident` hint keeps it; we update it via `replaces_id` |
 | Button limit | Alerts show actions under an "Options" menu (exact maximum verified in spike S2) | GNOME shows max 3 → 2 servers + "All servers…" |
-| Clicks come from | The helper, over `notify.sock` (0600, same-user check) | Only the current owner of `org.freedesktop.Notifications`; signals from other programs on the bus are ignored |
-| Clicking the body | Opens the "All servers…" picker | Same (`default` action) |
+| Clicks come from | The helper, over `notify.sock` (0600, same-user check) | Only the current owner of `org.freedesktop.Notifications`; signals from other programs on the bus are ignored. Dialog buttons: the zenity process the daemon started |
+| Clicking the body (or "All servers…") | Opens the dialog: a window of the helper app | Opens the dialog with `zenity` (optional: the release build has no GUI libraries) |
 
-- **"All servers…"** opens a terminal picker (`mis pick CVE-…`) that stays open. Choose a server and its SSH window opens.
+- **Dialog** (vulnerability, heads-up, restart and Apple update notifications): the verdict; **what it is** (the `mis show` facts, "Why it matters" above); **the fix**, with the exact command (one line, or one per server when they differ) and its notes (Ubuntu Pro, restart afterwards), or "no fix yet"; **what it affects**, a row per server with **Update** (**Restart**, **Open Software Update**). No button where there's nothing to run.
+  - All text is plain: AppKit labels on macOS, `zenity --no-markup` on Linux. A button sends back only `fix:<server>`, which the daemon checks like a notification button (§4.7).
+  - It stays open until closed. After **Update** the daemon marks that server ✓: on macOS the open window updates in place and stays behind the terminal the button opened; zenity closes on a button, so it reopens. The notification is re-posted (silently) with the same ✓, which is also the way back to a window now behind the terminal. On macOS it scrolls when many servers are listed.
+  - **No dialog** (helper not connected, no zenity): the click does what it did before: the terminal picker `mis pick CVE-…` (stays open; choose a server and its SSH window opens), `mis show CVE-…` for a heads-up, the fix itself for a restart or Apple update. `mis doctor` warns when zenity is missing.
 - **As fixes land:** "2 of 3 fixed" … then ✅ replaces the notification: "fixed on all servers" for a CVE, "macOS 15.8.2 installed" for an Apple update, "web restarted" after a restart.
 - **Lock notice:** "Make-It-Safer is locked, click to unlock" → opens Terminal with `mis unlock`.
 - **Buttons:** `notifications.max_buttons` (default 3) counts the server buttons plus "All servers…".
@@ -365,7 +368,7 @@ mis findings [--server X]        what is vulnerable where
 mis show CVE-…                   act now or later and why, servers, fix, details
 mis check [server]               run checks now
 mis fix <server> [CVE-…]         with a CVE: same as clicking that button; without one: everything fixable on the server
-mis pick CVE-…                   server picker (used by "All servers…")
+mis pick CVE-…                   server picker (a click opens it when there is no dialog)
 mis ack CVE-… [--server X] [--until DATE] [--reason TEXT]
 mis passphrase change            re-encrypt key with a new passphrase
 mis notify setup                 allow notifications (opens System Settings on macOS, checks), then a test
@@ -434,7 +437,7 @@ The computer `mis` runs on can be checked too: `mis init` asks (default yes), or
 | Compromised/malicious server | Collector output is treated as hostile: size limits, strict parsing, name validation, fuzz-tested parser. Nothing from it is executed. |
 | Poisoned or wrong feed data | Feed text never reaches commands. Worst case is a wrong alert, not code execution. Data comes over HTTPS. |
 | Another local user | 0700/0600 permissions, socket peer-UID check |
-| Fake button events | The daemon acts only on (server, CVE) pairs in its own state, with commands it built itself. Clicks come only from the macOS helper (same-user socket) or the D-Bus notification server (other senders are ignored). |
+| Fake button events | The daemon acts only on (server, CVE) pairs in its own state, with commands it built itself. Clicks come only from the macOS helper (same-user socket), the D-Bus notification server (other senders are ignored) or a zenity window the daemon started; a dialog button carries only a server name. |
 | Secrets in logs | Passphrases and keys are never logged; a test scans a fully logged unlock/check/lock/wrong-passphrase run for them. |
 | Misconfigured sshd locks you out | `sshd -t` and probes of the effective settings before the reload; any failure up to and including the reload is rolled back automatically; the login test as `mis` runs afterwards and lists what failed |
 
