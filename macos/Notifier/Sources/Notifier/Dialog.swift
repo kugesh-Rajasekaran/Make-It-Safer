@@ -49,8 +49,20 @@ final class Dialogs: NSObject, NSWindowDelegate {
         }
         let window = windows[dialog.id] ?? makeWindow(dialog.id)
         let content = view(dialog) { [weak window] in window?.close() }
-        window.contentView = content
-        window.setContentSize(content.fittingSize)
+        let size = content.fittingSize
+        content.frame = NSRect(origin: .zero, size: size)
+        // Many servers: it scrolls instead of growing past the screen.
+        let scroll = NSScrollView()
+        scroll.documentView = content
+        scroll.hasVerticalScroller = true
+        scroll.drawsBackground = false
+        window.contentView = scroll
+        let screen = (window.screen ?? NSScreen.main)?.visibleFrame.height ?? 800
+        let height = min(size.height, screen * 0.8)
+        let scroller = height < size.height ? NSScroller.scrollerWidth(for: .regular, scrollerStyle: scroll.scrollerStyle) : 0
+        window.setContentSize(NSSize(width: size.width + scroller, height: height))
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: size.height - height)) // the top (not flipped)
+        scroll.reflectScrolledClipView(scroll.contentView)
         if refresh {
             return
         }

@@ -270,6 +270,16 @@ let socketPath = CommandLine.arguments.count > 1
 
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
+// No menu bar shows for this app, but its shortcuts work in the dialog:
+// ⌘C copies the command, ⌘A selects, ⌘W closes.
+let edit = NSMenu(title: "Edit")
+edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+edit.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+let menu = NSMenu()
+menu.addItem(NSMenuItem(title: "Edit", action: nil, keyEquivalent: ""))
+menu.items[0].submenu = edit
+app.mainMenu = menu
 let bridge = Bridge(socketPath: socketPath)
 bridge.start()
 app.run()

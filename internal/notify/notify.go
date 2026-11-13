@@ -52,7 +52,7 @@ type Dialog struct {
 	Fix     string         `json:"fix,omitempty"`     // what the buttons do
 	Command string         `json:"command,omitempty"` // what they type in, when it's the same on every row
 	Rows    []Row          `json:"rows,omitempty"`
-	Refresh bool           `json:"refresh,omitempty"` // after one of its buttons: update it, but don't bring it in front of what the button opened
+	Refresh bool           `json:"refresh,omitempty"` // after one of its buttons: macOS updates it behind what the button opened; zenity, closed by the button, reopens
 }
 
 // Row is one server in a Dialog.

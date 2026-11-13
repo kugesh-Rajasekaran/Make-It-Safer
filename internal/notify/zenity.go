@@ -19,9 +19,10 @@ func zenityArgs(d Dialog) []string {
 	return args
 }
 
-// zenityLabel is a row's button, e.g. "Update ovh-web-1 ✓".
+// zenityLabel is a row's button, e.g. "Update ovh-web-1 ✓". A single "_"
+// would mark a keyboard shortcut and not show, so it is doubled.
 func zenityLabel(r Row) string {
-	label := r.Button.Title + " " + r.Name
+	label := r.Button.Title + " " + strings.ReplaceAll(r.Name, "_", "__")
 	if r.Opened {
 		label += " ✓"
 	}
@@ -42,7 +43,7 @@ func zenityAction(d Dialog, out string) string {
 
 // dialogText is d as plain text.
 func dialogText(d Dialog) string {
-	lines := []string{d.Title, d.Verdict}
+	lines := []string{d.Title, "Verdict: " + d.Verdict}
 	if len(d.Facts) > 0 {
 		lines = append(lines, "", "What it is")
 		for _, f := range d.Facts {

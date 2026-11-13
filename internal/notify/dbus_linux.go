@@ -3,6 +3,7 @@ package notify
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"os/exec"
 	"slices"
@@ -198,9 +199,9 @@ func (d *DBus) ShowDialog(dl Dialog) error {
 		return apperr.Wrap(apperr.NotifyUnavailable, err, "zenity isn't installed")
 	}
 	ctx, cancel := context.WithCancel(d.ctx)
-	var out bytes.Buffer
+	var out, stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, zenity, zenityArgs(dl)...) //nolint:gosec // zenity from PATH; arguments, not a shell line
-	cmd.Stdout = &out
+	cmd.Stdout, cmd.Stderr = &out, &stderr
 	if err := cmd.Start(); err != nil {
 		cancel()
 		return apperr.Wrap(apperr.NotifyUnavailable, err, "cannot start zenity")
@@ -212,7 +213,7 @@ func (d *DBus) ShowDialog(dl Dialog) error {
 	d.dialogs[dl.ID] = cancel
 	d.mu.Unlock()
 	go func() {
-		_ = cmd.Wait() // zenity exits with 1 for a button other than Close: what it printed says which
+		err := cmd.Wait() // zenity exits with 1 for a button other than Close: what it printed says which
 		d.mu.Lock()
 		replaced := ctx.Err() != nil // by a newer window (under the lock), or the daemon stopping
 		if !replaced {
@@ -220,6 +221,10 @@ func (d *DBus) ShowDialog(dl Dialog) error {
 		}
 		d.mu.Unlock()
 		cancel()
+		var exit *exec.ExitError
+		if err != nil && !replaced && (!errors.As(err, &exit) || exit.ExitCode() != 1) {
+			d.log.Warn("dialog", "status", "zenity failed", "id", dl.ID, "error", err, "stderr", strings.TrimSpace(stderr.String()))
+		}
 		if action := zenityAction(dl, out.String()); action != "" && !replaced {
 			d.events <- Event{NotificationID: dl.ID, Action: action, FromDialog: true}
 		}
