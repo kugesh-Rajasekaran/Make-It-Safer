@@ -44,6 +44,9 @@ func TestHelperProtocol(t *testing.T) {
 	_ = h.Show(Notification{ID: "cve:CVE-1", Title: "old"})
 	_ = h.Show(Notification{ID: "cve:CVE-1", Title: "new", Buttons: []Button{{ID: "fix:web", Title: "web"}}})
 	_ = h.Remove("lock")
+	if err := h.ShowDialog(Dialog{ID: "cve:CVE-1"}); err == nil {
+		t.Fatal("a dialog needs the helper connected: no window popping up later")
+	}
 
 	conn, err := net.Dial("unix", sock)
 	if err != nil {
@@ -77,6 +80,21 @@ func TestHelperProtocol(t *testing.T) {
 	}
 	if d := h.Describe(); d != "macOS (Alerts style)" {
 		t.Fatalf("Describe() = %q", d)
+	}
+
+	// A dialog goes to the helper; its buttons come back marked as such.
+	if err := h.ShowDialog(Dialog{ID: "cve:CVE-1", Title: "CVE-1 · openssh"}); err != nil {
+		t.Fatal(err)
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	line, err := r.ReadBytes('\n')
+	var m message
+	if err != nil || json.Unmarshal(line, &m) != nil || m.Op != "dialog" || m.Dialog == nil || m.Dialog.Title != "CVE-1 · openssh" {
+		t.Fatalf("dialog message = %s, %v", line, err)
+	}
+	_, _ = conn.Write([]byte(`{"op":"action","id":"cve:CVE-1","action":"fix:web","fromDialog":true}` + "\n"))
+	if ev := <-h.Events(); !ev.FromDialog || ev.Action != "fix:web" {
+		t.Fatalf("dialog click = %+v", ev)
 	}
 
 	// Recheck asks the helper for the current settings and waits for them:

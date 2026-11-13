@@ -4,9 +4,10 @@
 // It connects to the service's Unix socket (the first argument, or
 // ~/Library/Application Support/MakeItSafer/notify.sock) and exchanges one
 // JSON message per line:
-//   from the service: {"op":"show", id, title, body, buttons, sound}, {"op":"remove", id}
+//   from the service: {"op":"show", id, title, body, buttons, sound}, {"op":"remove", id},
+//                     {"op":"dialog", id, dialog} (Dialog.swift)
 //                     and {"op":"settings"} (report the current permission now)
-//   to the service:   {"op":"action", id, action} and {"op":"settings", authorized, alertStyle}
+//   to the service:   {"op":"action", id, action, fromDialog} and {"op":"settings", authorized, alertStyle}
 //
 // The permission is reported on connect, on request and after every
 // notification, so a change in System Settings is seen without a restart.
@@ -30,7 +31,9 @@ struct Message: Codable {
     var buttons: [Button]?
     var urgent: Bool?
     var sound: Bool?
+    var dialog: Dialog?
     var action: String?
+    var fromDialog: Bool?
     var authorized: Bool?
     var alertStyle: String?
 }
@@ -44,6 +47,9 @@ final class Bridge: NSObject, UNUserNotificationCenterDelegate {
     // Notifications asked for before the categories macOS already has were read.
     private var categoriesRead = false
     private var waiting: [Message] = []
+    private lazy var dialogs = Dialogs { [weak self] id, action in
+        self?.send(Message(op: "action", id: id, action: action, fromDialog: true))
+    }
 
     init(socketPath: String) {
         self.socketPath = socketPath
@@ -179,6 +185,10 @@ final class Bridge: NSObject, UNUserNotificationCenterDelegate {
             reportSettings()
         case "settings":
             reportSettings()
+        case "dialog":
+            if let dialog = message.dialog {
+                dialogs.show(dialog)
+            }
         case "remove":
             if let id = message.id {
                 categories.removeValue(forKey: "mis." + id)
