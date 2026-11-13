@@ -46,6 +46,21 @@ func OpenFix(paths config.Paths, cfg *config.Config, server, key string) error {
 	if err != nil {
 		return err
 	}
+	fs, cmd, err := fixFor(inv, st, server, key)
+	if err != nil {
+		return err
+	}
+	script := termlaunch.RemoteScript(termlaunch.Banner(server, fs, cmd), cmd)
+	launcher := termlaunch.Launcher{Terminal: cfg.Terminal, TempDir: paths.Temp}
+	if s.Local {
+		return launcher.Open(termlaunch.LocalFixLauncher(script))
+	}
+	return launcher.Open(termlaunch.FixLauncher(s, termlaunch.RemoteCommand(script)))
+}
+
+// fixFor is the fix for server's open findings in group key, or for all it
+// can fix when key is "".
+func fixFor(inv *inventory.Inventory, st *findings.Store, server, key string) ([]*findings.Finding, *fixcmd.Command, error) {
 	var fs []*findings.Finding
 	for _, f := range st.Findings {
 		if f.Server != server || !f.Open() {
@@ -56,18 +71,10 @@ func OpenFix(paths config.Paths, cfg *config.Config, server, key string) error {
 		}
 	}
 	if len(fs) == 0 {
-		return apperr.New(apperr.FixNothingToDo, "nothing open to fix on "+server)
+		return nil, nil, apperr.New(apperr.FixNothingToDo, "nothing open to fix on "+server)
 	}
 	cmd, err := fixcmd.Build(inv, fs)
-	if err != nil {
-		return err
-	}
-	script := termlaunch.RemoteScript(termlaunch.Banner(server, fs, cmd), cmd)
-	launcher := termlaunch.Launcher{Terminal: cfg.Terminal, TempDir: paths.Temp}
-	if s.Local {
-		return launcher.Open(termlaunch.LocalFixLauncher(script))
-	}
-	return launcher.Open(termlaunch.FixLauncher(s, termlaunch.RemoteCommand(script)))
+	return fs, cmd, err
 }
 
 // softwareUpdateURL opens System Settings › General › Software Update.
@@ -81,9 +88,9 @@ var openSoftwareUpdate = func() error {
 	return nil
 }
 
-// fix opens the fix for one server, marks its button ✓ and checks the
-// server again over the next hour.
-func (d *Daemon) fix(server, key string) error {
+// fix opens the fix for one server, marks its button ✓ (in the dialog when
+// the click came from there) and checks the server again over the next hour.
+func (d *Daemon) fix(server, key string, fromDialog bool) error {
 	cfg, err := config.Load(d.paths.Config)
 	if err != nil {
 		return err
@@ -93,7 +100,11 @@ func (d *Daemon) fix(server, key string) error {
 	}
 	if key != "" {
 		d.markClicked(key, server)
-		d.reshow(key, cfg)
+		if fromDialog {
+			_ = d.showDialog(key, true)
+		} else {
+			d.reshow(key, cfg)
+		}
 	}
 	d.followUp(server)
 	return nil
@@ -115,7 +126,7 @@ func (d *Daemon) reshow(key string, cfg *config.Config) {
 	if err != nil {
 		return
 	}
-	group := slices.DeleteFunc(slices.Clone(st.Findings), func(f *findings.Finding) bool { return !f.Open() || groupKey(f) != key })
+	group := openGroup(st, key)
 	if len(group) > 0 {
 		n := d.groupNotification(key, group, fixedServers(st, key, d.now()), cfg)
 		n.Sound = false
@@ -162,11 +173,27 @@ func (d *Daemon) followUp(server string) {
 	}()
 }
 
-// onClick reacts to a click on a notification or one of its buttons.
+// onClick reacts to a click on a notification or one of its buttons, or on
+// a dialog's button. A click on a vulnerability, restart or Apple update
+// notification opens its dialog; its fix buttons open the fix.
 func (d *Daemon) onClick(ev notify.Event) {
 	id := ev.NotificationID
+	server, fixButton := strings.CutPrefix(ev.Action, "fix:")
+	reboot := string(findings.KindReboot) + ":"
 	var err error
 	switch {
+	case fixButton && (strings.HasPrefix(id, "cve:") || strings.HasPrefix(id, "apple:") || strings.HasPrefix(id, reboot)):
+		err = d.fix(server, id, ev.FromDialog)
+	case strings.HasPrefix(id, "cve:"): // the notification, or "All servers…"
+		err = d.openDialog(id, func() error { return d.openLocal("pick", strings.TrimPrefix(id, "cve:")) })
+	case strings.HasPrefix(id, "apple:"):
+		err = d.openDialog(id, func() error { return d.fix(config.LocalName(), id, false) })
+	case strings.HasPrefix(id, reboot):
+		err = d.openDialog(id, func() error { return d.fix(strings.TrimPrefix(id, reboot), id, false) })
+	case strings.HasPrefix(id, string(findings.KindEarlyWarning)+":"):
+		err = d.openDialog(id, func() error {
+			return d.openLocal("show", strings.TrimPrefix(id, string(findings.KindEarlyWarning)+":"))
+		})
 	case id == lockNoticeID:
 		err = d.openLocal("unlock")
 	case id == summaryID || id == staleID:
@@ -175,22 +202,8 @@ func (d *Daemon) onClick(ev notify.Event) {
 		err = d.openLocal("status")
 	case strings.HasPrefix(id, "baseline:"):
 		err = d.openLocal("findings", "--server", strings.TrimPrefix(id, "baseline:"))
-	case strings.HasPrefix(id, "cve:"):
-		if server, ok := strings.CutPrefix(ev.Action, "fix:"); ok {
-			err = d.fix(server, id)
-		} else {
-			err = d.openLocal("pick", strings.TrimPrefix(id, "cve:"))
-		}
-	case strings.HasPrefix(id, "apple:"):
-		// One notification per Apple update: the button and the notification
-		// itself both open Software Update on this Mac.
-		err = d.fix(config.LocalName(), id)
-	case strings.HasPrefix(id, string(findings.KindReboot)+":"):
-		err = d.fix(strings.TrimPrefix(id, string(findings.KindReboot)+":"), id)
 	case strings.HasPrefix(id, hostKeyPrefix):
 		err = d.openLocal("server", "verify", strings.TrimPrefix(id, hostKeyPrefix))
-	case strings.HasPrefix(id, string(findings.KindEarlyWarning)+":"):
-		err = d.openLocal("show", strings.TrimPrefix(id, string(findings.KindEarlyWarning)+":"))
 	case strings.HasPrefix(id, string(findings.KindEndOfLife)+":"):
 		err = d.openLocal("findings", "--server", strings.TrimPrefix(id, string(findings.KindEndOfLife)+":"))
 	}
