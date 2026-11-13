@@ -133,7 +133,7 @@ WHAT IT IS
 THE FIX
   Update opens your terminal with this typed in (over SSH for a server).
   Nothing runs until you press Enter.
-  sudo apt-get update && sudo apt-get install --only-upgrade openssh-server
+  sudo apt-get update && sudo apt-get install --only-upgrade openssh-client openssh-server …
 
 WHAT IT AFFECTS
   db-1    openssh 1:9.6p1-3ubuntu13 → 1:9.6p1-3ubuntu13.3     [ Update ]
@@ -143,7 +143,7 @@ WHAT IT AFFECTS
 
 - **Update** opens that server's SSH session, as above. The window stays open and marks the server ✓, so you can go through them one by one.
 - A **heads-up** shows the details without buttons (no fix yet). A **restart** notice has **Restart**. A **Mac update** ("macOS 15.8.2 · fixes 58 vulnerabilities") has **Open Software Update**, like its **This Mac** button.
-- On Linux the window comes from `zenity` (`sudo apt install zenity`; `mis doctor` tells you if it's missing). Without it, a click opens a server list in your terminal instead.
+- On Linux the window comes from `zenity` (`sudo apt install zenity`; `mis doctor` tells you if it's missing). Without it, a click does what it did before: the terminal (a server list for a vulnerability).
 
 ## Act now or later?
 

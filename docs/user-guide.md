@@ -98,7 +98,7 @@ The line under it says why, in plain words. "Can be triggered remotely" means th
 
 A click on a notification opens a small window that stays until you close it: the verdict, **what it is** (what an attacker could do, how it's triggered, severity, whether it's being exploited), **the fix** with the exact command, and **what it affects**, with a button per server. **Update** opens that server's fix, as below; the window stays and marks it ✓. A restart notice has **Restart**; a Mac update has **Open Software Update**.
 
-On Linux the window needs `zenity` (`sudo apt install zenity`). Without it, a click opens a server list in your terminal instead.
+On Linux the window needs `zenity` (`sudo apt install zenity`). Without it, a click does what it did before: the terminal (a server list for a vulnerability).
 
 **Commands you'll use:**
 

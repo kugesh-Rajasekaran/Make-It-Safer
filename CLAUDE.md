@@ -15,7 +15,7 @@ Standards are adapted from the DineSynk repo (working style, engineering princip
 - **Vulnerability data:** OSV.dev (confirmed), CVE List (early warning), CISA KEV, EPSS, endoflife.date, Apple security notes (this Mac)
 - **Status:** milestones M0–M13 built; latest release v0.2.0. What's left is checking on the user's own Mac, Linux desktop and servers (spikes S2, S3 and the acceptance checklist in the plan).
 
-**Source of truth:** `docs/design.md` (how it works, decisions) and `docs/implementation-plan.md` (milestones M0–M12, tasks). Domain vocabulary is in `CONTEXT.md`.
+**Source of truth:** `docs/design.md` (how it works, decisions) and `docs/implementation-plan.md` (milestones M0–M13, tasks). Domain vocabulary is in `CONTEXT.md`.
 
 ## How to Work
 

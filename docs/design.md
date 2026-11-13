@@ -305,9 +305,9 @@ On a typical server (369 source packages), two days of real CVEs (1,236 records)
 | Clicks come from | The helper, over `notify.sock` (0600, same-user check) | Only the current owner of `org.freedesktop.Notifications`; signals from other programs on the bus are ignored. Dialog buttons: the zenity process the daemon started |
 | Clicking the body (or "All servers…") | Opens the dialog: a window of the helper app | Opens the dialog with `zenity` (optional: the release build has no GUI libraries) |
 
-- **Dialog** (vulnerability, heads-up, restart and Apple update notifications): the verdict; **what it is** (the `mis show` facts, "Why it matters" above); **the fix**, with the exact command (one line, or one per server when they differ); **what it affects**, a row per server with **Update** (**Restart**, **Open Software Update**). No button where there's nothing to run.
+- **Dialog** (vulnerability, heads-up, restart and Apple update notifications): the verdict; **what it is** (the `mis show` facts, "Why it matters" above); **the fix**, with the exact command (one line, or one per server when they differ) and its notes (Ubuntu Pro, restart afterwards), or "no fix yet"; **what it affects**, a row per server with **Update** (**Restart**, **Open Software Update**). No button where there's nothing to run.
   - All text is plain: AppKit labels on macOS, `zenity --no-markup` on Linux. A button sends back only `fix:<server>`, which the daemon checks like a notification button (§4.7).
-  - It stays open until closed. After **Update** the daemon marks that server ✓: on macOS the open window updates in place and stays behind the terminal the button opened; zenity closes on a button, so it reopens. The notification isn't re-posted.
+  - It stays open until closed. After **Update** the daemon marks that server ✓: on macOS the open window updates in place and stays behind the terminal the button opened; zenity closes on a button, so it reopens. The notification is re-posted (silently) with the same ✓, which is also the way back to a window now behind the terminal. It scrolls when many servers are listed.
   - **No dialog** (helper not connected, no zenity): the click does what it did before: the terminal picker `mis pick CVE-…` (stays open; choose a server and its SSH window opens), `mis show CVE-…` for a heads-up, the fix itself for a restart or Apple update. `mis doctor` warns when zenity is missing.
 - **As fixes land:** "2 of 3 fixed" … then ✅ replaces the notification: "fixed on all servers" for a CVE, "macOS 15.8.2 installed" for an Apple update, "web restarted" after a restart.
 - **Lock notice:** "Make-It-Safer is locked, click to unlock" → opens Terminal with `mis unlock`.
@@ -368,7 +368,7 @@ mis findings [--server X]        what is vulnerable where
 mis show CVE-…                   act now or later and why, servers, fix, details
 mis check [server]               run checks now
 mis fix <server> [CVE-…]         with a CVE: same as clicking that button; without one: everything fixable on the server
-mis pick CVE-…                   server picker (used by "All servers…")
+mis pick CVE-…                   server picker (a click opens it when there is no dialog)
 mis ack CVE-… [--server X] [--until DATE] [--reason TEXT]
 mis passphrase change            re-encrypt key with a new passphrase
 mis notify setup                 allow notifications (opens System Settings on macOS, checks), then a test
