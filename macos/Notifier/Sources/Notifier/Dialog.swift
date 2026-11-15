@@ -77,6 +77,7 @@ final class Dialogs: NSObject, NSWindowDelegate {
         }
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless() // in front even when macOS doesn't make this background app active
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -87,7 +88,7 @@ final class Dialogs: NSObject, NSWindowDelegate {
         let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: true)
         window.title = "Make-It-Safer"
         window.isReleasedWhenClosed = false
-        window.collectionBehavior = .moveToActiveSpace
+        window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary] // also over a full-screen app
         window.delegate = self
         windows[id] = window
         return window
