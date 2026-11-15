@@ -18,8 +18,8 @@ import (
 
 // message is one line between the daemon and the macOS helper app.
 //
-//	daemon → helper: {"op":"show", id, title, body, buttons, urgent, sound} | {"op":"remove", id}
-//	helper → daemon: {"op":"action", id, action} | {"op":"settings", authorized, alertStyle}
+//	daemon → helper: {"op":"show", id, title, body, buttons, urgent, sound} | {"op":"remove", id} | {"op":"dialog", id, dialog}
+//	helper → daemon: {"op":"action", id, action, fromDialog} | {"op":"settings", authorized, alertStyle}
 type message struct {
 	Op         string   `json:"op"`
 	ID         string   `json:"id,omitempty"`
@@ -28,7 +28,9 @@ type message struct {
 	Buttons    []Button `json:"buttons,omitempty"`
 	Urgent     bool     `json:"urgent,omitempty"`
 	Sound      bool     `json:"sound,omitempty"`
+	Dialog     *Dialog  `json:"dialog,omitempty"`
 	Action     string   `json:"action,omitempty"`
+	FromDialog bool     `json:"fromDialog,omitempty"`
 	Authorized bool     `json:"authorized,omitempty"`
 	AlertStyle string   `json:"alertStyle,omitempty"`
 }
@@ -114,7 +116,7 @@ func (h *Helper) read(conn net.Conn) {
 		}
 		switch m.Op {
 		case "action":
-			h.events <- Event{NotificationID: m.ID, Action: m.Action}
+			h.events <- Event{NotificationID: m.ID, Action: m.Action, FromDialog: m.FromDialog}
 		case "settings":
 			h.mu.Lock()
 			h.authorized, h.alertStyle = m.Authorized, m.AlertStyle
@@ -143,6 +145,10 @@ func (h *Helper) send(m message) {
 	}
 	h.mu.Lock()
 	conn := h.conn
+	if conn == nil && m.Op == "dialog" { // a window popping up later would be a surprise
+		h.mu.Unlock()
+		return
+	}
 	if conn == nil {
 		for i, p := range h.pending {
 			if p.ID == m.ID {
@@ -179,6 +185,19 @@ func (h *Helper) relaunch() {
 // Show sends a notification to the helper app.
 func (h *Helper) Show(n Notification) error {
 	h.send(message{Op: "show", ID: n.ID, Title: n.Title, Body: n.Body, Buttons: n.Buttons, Urgent: n.Urgent, Sound: n.Sound})
+	return nil
+}
+
+// ShowDialog opens d in the helper app, or fails while the helper isn't
+// connected (the caller then opens the terminal instead).
+func (h *Helper) ShowDialog(d Dialog) error {
+	h.mu.Lock()
+	connected := h.conn != nil
+	h.mu.Unlock()
+	if !connected {
+		return apperr.New(apperr.NotifyUnavailable, "the macOS helper app isn't connected")
+	}
+	h.send(message{Op: "dialog", ID: d.ID, Dialog: &d})
 	return nil
 }
 

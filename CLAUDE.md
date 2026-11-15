@@ -13,9 +13,9 @@ Standards are adapted from the DineSynk repo (working style, engineering princip
 - **Servers supported (v1):** Ubuntu, Debian
 - **Audience (v1):** personal use, installed with `install.sh` (GitHub Releases) or from source
 - **Vulnerability data:** OSV.dev (confirmed), CVE List (early warning), CISA KEV, EPSS, endoflife.date, Apple security notes (this Mac)
-- **Status:** milestones M0–M12 built and v0.1.0 released. What's left is checking on the user's own Mac, Linux desktop and servers (spikes S2, S3 and the acceptance checklist in the plan).
+- **Status:** milestones M0–M13 built; latest release v0.2.0. What's left is checking on the user's own Mac, Linux desktop and servers (spikes S2, S3 and the acceptance checklist in the plan).
 
-**Source of truth:** `docs/design.md` (how it works, decisions) and `docs/implementation-plan.md` (milestones M0–M12, tasks). Domain vocabulary is in `CONTEXT.md`.
+**Source of truth:** `docs/design.md` (how it works, decisions) and `docs/implementation-plan.md` (milestones M0–M13, tasks). Domain vocabulary is in `CONTEXT.md`.
 
 ## How to Work
 
@@ -109,13 +109,13 @@ internal/doctor/         mis doctor checks (each a function of plain inputs)
 internal/findings/       state machine, priorities, reminders, storage
 internal/engine/         a check: refresh package lists, match them, record findings
 internal/fixcmd/         update command builder (the ONLY place commands are built)
-internal/notify/         notifier interface, linux (D-Bus), darwin (helper IPC)
+internal/notify/         notifier interface, linux (D-Bus, zenity dialogs), darwin (helper IPC)
 internal/termlaunch/     terminal launcher, prefill snippet
 internal/setup/          server setup/teardown scripts, verify checks
 internal/testenv/        throwaway Docker SSH servers for integration tests
 internal/config/         schema, defaults, paths, permission checks
 server/                  collect.sh, setup/teardown templates (embedded)
-macos/Notifier/          Swift helper app
+macos/Notifier/          Swift helper app (notifications and dialogs)
 packaging/               launchd plist, systemd unit
 ```
 

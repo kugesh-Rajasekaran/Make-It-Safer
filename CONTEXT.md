@@ -93,5 +93,8 @@ A desktop notification for one Vulnerability, with one Server button per affecte
 The update command `mis` builds for a Finding (e.g. `sudo apt-get install --only-upgrade …`). It is typed into the user's SSH session, never run automatically.
 _Avoid_: patch script, remediation
 
+**Dialog**:
+The window a click on a Notification (or "All servers…") opens: what the Vulnerability is, the Fix command, and a button per affected Server. It stays open while the user opens Servers one by one. Users see it as the "details window".
+
 **Picker**:
-The terminal menu opened by "All servers…". It stays open while the user opens Servers one by one.
+The terminal menu opened instead when there is no Dialog (Linux without zenity, or the macOS helper app not connected).

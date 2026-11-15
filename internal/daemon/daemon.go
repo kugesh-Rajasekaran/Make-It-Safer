@@ -133,7 +133,7 @@ func (d *Daemon) dispatch(ctx context.Context, req Request) (any, error) {
 		if req.CVE != "" {
 			key = "cve:" + req.CVE
 		}
-		return nil, d.fix(req.Server, key)
+		return nil, d.fix(req.Server, key, false)
 	case OpNotify:
 		return nil, d.notifyTest()
 	}

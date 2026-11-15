@@ -75,8 +75,8 @@ You mostly do nothing: the background service checks by itself and notifies you.
 
 | Notification | Means | Click |
 |---|---|---|
-| 🔴 / 🟠 **CVE-… · openssh** · "2 servers affected · fix available" | A confirmed vulnerability with a fix. The line above says why it matters (e.g. "Can be triggered remotely, no login · could take it over"). 🔴 is urgent (actively exploited, or CVSS ≥ 9), reminded every 4 h; 🟠 daily. | A server button opens its fix. "All servers…", or the notification itself, opens a list to pick from. |
-| 🟡 **Heads-up · CVE-… · openssl** | An early warning: a critical new CVE that names software you have, before your distro has confirmed it. No fix yet. | Opens `mis show CVE-…` |
+| 🔴 / 🟠 **CVE-… · openssh** · "2 servers affected · fix available" | A confirmed vulnerability with a fix. The line above says why it matters (e.g. "Can be triggered remotely, no login · could take it over"). 🔴 is urgent (actively exploited, or CVSS ≥ 9), reminded every 4 h; 🟠 daily. | A server button opens its fix. The notification itself, or "All servers…", opens its [details window](#the-details-window). |
+| 🟡 **Heads-up · CVE-… · openssl** | An early warning: a critical new CVE that names software you have, before your distro has confirmed it. No fix yet. | Opens its details (no buttons: no fix yet) |
 | ✅ **CVE-… · Fixed on all servers** | Every affected server is fixed. Other notifications end the same way: ✅ "macOS … installed", ✅ "web restarted". A heads-up can also end as ✅ "not affected". | — |
 | **Weekly summary** | Normal-priority updates waiting (not counting ones you snoozed or accepted). | Opens `mis findings` |
 | **Make-It-Safer is locked** | After a restart. See [unlock](#after-a-restart-unlock). | Opens `mis unlock` |
@@ -93,6 +93,12 @@ You mostly do nothing: the background service checks by itself and notifies you.
 | **Ignored** | It matches your ignore list (`rules.ignore`) |
 
 The line under it says why, in plain words. "Can be triggered remotely" means the attack can arrive over the network; `mis` can't see your firewall, so it doesn't claim your server is exposed.
+
+### The details window
+
+A click on a notification opens a small window that stays until you close it: the verdict, **what it is** (what an attacker could do, how it's triggered, severity, whether it's being exploited), **the fix** with the exact command, and **what it affects**, with a button per server. **Update** opens that server's fix, as below; the window stays and marks it ✓. A restart notice has **Restart**; a Mac update has **Open Software Update**.
+
+On Linux the window needs `zenity` (`sudo apt install zenity`). Without it, a click does what it did before: the terminal (a server list for a vulnerability).
 
 **Commands you'll use:**
 
@@ -112,7 +118,7 @@ Every command accepts `--json` for scripts and AI agents.
 
 ## Fixing
 
-1. **Click the server's button** in the notification (or run `mis fix <server> CVE-…`, or `mis pick CVE-…` to choose from a list). Without a CVE, `mis fix <server>` combines everything fixable on that server into one command.
+1. **Click the server's button** in the notification or its details window (or run `mis fix <server> CVE-…`, or `mis pick CVE-…` to choose from a list). Without a CVE, `mis fix <server>` combines everything fixable on that server into one command.
 2. Your terminal opens and logs in with **your own** `ssh` login. Your keys and password prompts apply as usual.
 3. A banner shows what's being fixed, and the command is **typed in for you**:
    ```

@@ -5,7 +5,9 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -199,5 +201,32 @@ func TestBodyTextEscapesMarkup(t *testing.T) {
 	}
 	if got := bodyText([]string{"actions"}, body); got != body {
 		t.Errorf("without markup the text is shown as is: %q", got)
+	}
+}
+
+func TestShowDialogWithZenity(t *testing.T) {
+	dir := t.TempDir() // a fake zenity: the user clicks "Update web"
+	if err := os.WriteFile(filepath.Join(dir, "zenity"), []byte("#!/bin/sh\nprintf '%s\\n' 'Update web'\nexit 1\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	d := &DBus{ctx: ctx, log: slog.New(slog.NewTextHandler(io.Discard, nil)), events: make(chan Event, 1), dialogs: map[string]context.CancelFunc{}}
+	if err := d.ShowDialog(Dialog{ID: "cve:CVE-1", Rows: []Row{{Name: "web", Button: &Button{ID: "fix:web", Title: "Update"}}}}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case ev := <-d.events:
+		if ev != (Event{NotificationID: "cve:CVE-1", Action: "fix:web", FromDialog: true}) {
+			t.Fatalf("event = %+v", ev)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no click from the dialog")
+	}
+
+	t.Setenv("PATH", t.TempDir())
+	if err := d.ShowDialog(Dialog{ID: "cve:CVE-1"}); err == nil {
+		t.Fatal("without zenity there is no dialog: the caller falls back to the terminal")
 	}
 }

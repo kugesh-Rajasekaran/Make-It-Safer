@@ -1,8 +1,11 @@
 package notify
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"log/slog"
+	"os/exec"
 	"slices"
 	"strings"
 	"sync"
@@ -36,10 +39,12 @@ type DBus struct {
 	server string
 	events chan Event
 
-	mu    sync.Mutex
-	ids   map[string]uint32 // our ID → the notification server's ID
-	back  map[uint32]string
-	owner string // unique bus name of the notification server; only its signals count
+	ctx     context.Context // the daemon's: open dialogs close with it
+	mu      sync.Mutex
+	ids     map[string]uint32 // our ID → the notification server's ID
+	back    map[uint32]string
+	owner   string                        // unique bus name of the notification server; only its signals count
+	dialogs map[string]context.CancelFunc // open zenity windows, by Dialog ID
 }
 
 // NewDBus connects to the session bus.
@@ -48,8 +53,8 @@ func NewDBus(ctx context.Context, log *slog.Logger) (*DBus, error) {
 	if err != nil {
 		return nil, apperr.Wrap(apperr.NotifyUnavailable, err, "no D-Bus session")
 	}
-	d := &DBus{log: log, conn: conn, obj: conn.Object(busName, busPath), events: make(chan Event, 16),
-		ids: map[string]uint32{}, back: map[uint32]string{}}
+	d := &DBus{log: log, conn: conn, obj: conn.Object(busName, busPath), events: make(chan Event, 16), ctx: ctx,
+		ids: map[string]uint32{}, back: map[uint32]string{}, dialogs: map[string]context.CancelFunc{}}
 	if err := d.obj.Call(busPrefix+"GetCapabilities", 0).Store(&d.caps); err != nil {
 		_ = conn.Close()
 		return nil, apperr.Wrap(apperr.NotifyUnavailable, err, "no notification server on the session bus")
@@ -185,6 +190,52 @@ func (d *DBus) Remove(id string) error {
 
 // Events reports clicks.
 func (d *DBus) Events() <-chan Event { return d.events }
+
+// ShowDialog opens dl with zenity; a click on one of its buttons comes back
+// as an Event. Showing the same ID again replaces the open window.
+func (d *DBus) ShowDialog(dl Dialog) error {
+	zenity, err := exec.LookPath("zenity")
+	if err != nil {
+		return apperr.Wrap(apperr.NotifyUnavailable, err, "zenity isn't installed")
+	}
+	ctx, cancel := context.WithCancel(d.ctx)
+	var out, stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, zenity, zenityArgs(dl)...) //nolint:gosec // zenity from PATH; arguments, not a shell line
+	cmd.Stdout, cmd.Stderr = &out, &stderr
+	if err := cmd.Start(); err != nil {
+		cancel()
+		return apperr.Wrap(apperr.NotifyUnavailable, err, "cannot start zenity")
+	}
+	d.mu.Lock()
+	if stop := d.dialogs[dl.ID]; stop != nil {
+		stop()
+	}
+	d.dialogs[dl.ID] = cancel
+	d.mu.Unlock()
+	go func() {
+		err := cmd.Wait() // zenity exits with 1 for a button other than Close: what it printed says which
+		d.mu.Lock()
+		replaced := ctx.Err() != nil // by a newer window (under the lock), or the daemon stopping
+		if !replaced {
+			delete(d.dialogs, dl.ID)
+		}
+		d.mu.Unlock()
+		cancel()
+		action := zenityAction(dl, out.String())
+		var exit *exec.ExitError
+		switch {
+		case replaced || err == nil:
+		case !errors.As(err, &exit) || exit.ExitCode() != 1:
+			d.log.Warn("dialog", "status", "zenity failed", "id", dl.ID, "error", err, "stderr", strings.TrimSpace(stderr.String()))
+		case action == "" && stderr.Len() > 0: // closed, or GTK couldn't open a window (it exits with 1 too)
+			d.log.Info("dialog", "status", "closed", "id", dl.ID, "stderr", strings.TrimSpace(stderr.String()))
+		}
+		if action != "" && !replaced {
+			d.events <- Event{NotificationID: dl.ID, Action: action, FromDialog: true}
+		}
+	}()
+	return nil
+}
 
 // Describe names the notification server and warns when buttons won't work.
 func (d *DBus) Describe() string {

@@ -154,6 +154,16 @@ func Desktop(env []string) Result {
 		Fix:    "systemctl --user import-environment DISPLAY WAYLAND_DISPLAY DBUS_SESSION_BUS_ADDRESS, then: mis service install"}
 }
 
+// Dialogs checks (on Linux) that zenity is installed: it shows the dialog a
+// click on a notification opens.
+func Dialogs(zenity bool) Result {
+	if zenity {
+		return Result{Name: "Dialogs", Level: OK, Detail: "a click on a notification opens its details (zenity)"}
+	}
+	return Result{Name: "Dialogs", Level: Warn, Detail: "zenity isn't installed, so a click on a notification opens the terminal instead",
+		Fix: "sudo apt install zenity"}
+}
+
 // Source is a data source and a small address to try it with.
 type Source struct {
 	Name string

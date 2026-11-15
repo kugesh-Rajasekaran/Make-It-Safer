@@ -119,9 +119,31 @@ The second line says why it matters, so you can decide whether it can wait (see 
 
 Why doesn't it just run the fix? Running it automatically would mean `mis` holds admin access to every server. Instead `mis` only ever has read-only access, and anything that changes a server happens in your own session, where you can see it.
 
-The other buttons:
-- **All servers…** (or a click on the notification itself) opens a list in your terminal. Pick a server and its SSH window opens; the list comes back so you can pick the next one, and `q` leaves it.
-- **On a Mac update notification** ("macOS 15.8.2 · fixes 58 vulnerabilities"), the **This Mac** button (or a click on the notification) opens System Settings › Software Update.
+**Click the notification itself** (or **All servers…**) for its details. A small window opens and stays until you close it:
+
+```text
+CVE-2024-6387 · openssh                                        This week
+
+WHAT IT IS
+  What an attacker could do   Could take it over
+  How it's triggered          Can be triggered remotely, no login · no user action
+  Severity                    CVSS 8.1 of 10
+  Being exploited?            Not on CISA's list of exploited vulnerabilities
+
+THE FIX
+  Update opens your terminal with this typed in (over SSH for a server).
+  Nothing runs until you press Enter.
+  sudo apt-get update && sudo apt-get install --only-upgrade openssh-client openssh-server …
+
+WHAT IT AFFECTS
+  db-1    openssh 1:9.6p1-3ubuntu13 → 1:9.6p1-3ubuntu13.3     [ Update ]
+  web-1   openssh 1:9.6p1-3ubuntu13 → 1:9.6p1-3ubuntu13.3     [ Update ✓ ]
+                                                               [ Close ]
+```
+
+- **Update** opens that server's SSH session, as above. The window stays open and marks the server ✓, so you can go through them one by one.
+- A **heads-up** shows the details without buttons (no fix yet). A **restart** notice has **Restart**. A **Mac update** ("macOS 15.8.2 · fixes 58 vulnerabilities") has **Open Software Update**, like its **This Mac** button.
+- On Linux the window comes from `zenity` (`sudo apt install zenity`; `mis doctor` tells you if it's missing). Without it, a click does what it did before: the terminal (a server list for a vulnerability).
 
 ## Act now or later?
 

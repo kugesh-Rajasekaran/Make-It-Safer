@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/config"
+	"github.com/kugesh-rajasekaran/make-it-safer/internal/explain"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/findings"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/inventory"
 	"github.com/kugesh-rajasekaran/make-it-safer/internal/notify"
@@ -84,6 +85,11 @@ func TestAppleUpdateClick(t *testing.T) {
 
 	if opened != 2 {
 		t.Fatalf("Software Update opened %d times, want 2", opened)
+	}
+	// With a dialog, the click shows the update first.
+	if dg, err := d.dialog(key); err != nil || dg.Title != "macOS 15.8.2 · fixes 1 vulnerability" || dg.Facts[0] != (explain.Fact{Label: "Worst of them", Value: "CVE-2026-1002"}) || dg.Fix != "Install it in System Settings › Software Update." ||
+		rows(*dg) != config.LocalLabel()+"|macOS 15.7.7 → 15.8.2|fix:"+me+"=Open Software Update|true|" {
+		t.Fatalf("Apple dialog: %+v, %v", dg, err)
 	}
 	rec.mu.Lock()
 	defer rec.mu.Unlock()

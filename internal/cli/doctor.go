@@ -57,7 +57,8 @@ func (a *app) doctorCmd() *cobra.Command {
 			)
 			if runtime.GOOS == "linux" {
 				out, _ := exec.CommandContext(ctx, "systemctl", "--user", "show-environment").Output()
-				results = append(results, doctor.Desktop(strings.Split(string(out), "\n")))
+				_, err := exec.LookPath("zenity")
+				results = append(results, doctor.Desktop(strings.Split(string(out), "\n")), doctor.Dialogs(err == nil))
 			}
 			var reachable doctor.Result
 			_ = a.withSpinner("Checking the data sources", func() error {
